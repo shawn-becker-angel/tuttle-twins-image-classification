@@ -8,22 +8,31 @@ import pandas as pd
 from tensorflow import keras
 from tensorflow.keras import layers
 
-directory = "/Users/shawnbecker-mbp/Google Drive/My Drive/tuttle_twins/source-images/"
-df = pd.read_csv("../csv-data/train.csv")
+HOME_DIR = os.path.expanduser('~') 
+
+train_csv_file =  "train_data.csv"
+if not os.path.isfile(train_csv_file):
+    raise Exception(f"no such file: {train_csv_file}")
+
+directory = "source_images/"
+if not os.path.isdir(directory):
+    raise Exception(f"no such directory: {directory}")
+
+
+df = pd.read_csv(train_csv_file,header=None, names=['file_name','label'])
 
 file_paths = df["file_name"].values
 labels = df["label"].values
 ds_train = tf.data.Dataset.from_tensor_slices((file_paths, labels))
 
-
 def read_image(image_file, label):
     image = tf.io.read_file(directory + image_file)
-    image = tf.image.decode_image(image, channels=1, dtype=tf.float32)
+    image = tf.image.decode_image(image, channels=3, dtype=tf.float32)
     return image, label
-
 
 def augment(image, label):
     # data augmentation here
+    print(f"augment image:{image} label:{label}")
     return image, label
 
 
@@ -52,3 +61,17 @@ model.compile(
 )
 
 model.fit(ds_train, epochs=10, verbose=2)
+
+#==================================
+# TESTS
+#==================================
+
+def test_read_image():
+    image_file =  file_paths.iloc[0]
+    label = labels.iloc[0]
+    img, img_class = read_image(image_file, label)
+    print(img)
+    print(img_class)
+
+if __name__ == '__main__':
+    test_read_image()
