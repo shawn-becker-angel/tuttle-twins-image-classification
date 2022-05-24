@@ -34,6 +34,10 @@ print('\ndownload the mnist dataset')
     with_info=True,
 )
 
+print("ds_train:", ds_train)
+print("ds_test:", ds_test)
+print("ds_info:", ds_info)
+
 def normalize_img(image, label):
   """Normalizes images: `uint8` -> `float32`."""
   return tf.cast(image, tf.float32) / 255., label
