@@ -10,14 +10,13 @@ from tensorflow.keras import layers
 
 HOME_DIR = os.path.expanduser('~') 
 
-train_csv_file =  "train_data.csv"
+train_csv_file =  "../csv-data/train_data.csv"
 if not os.path.isfile(train_csv_file):
     raise Exception(f"no such file: {train_csv_file}")
 
-directory = "source_images/"
+image_source_directory = "../source_images/"
 if not os.path.isdir(directory):
     raise Exception(f"no such directory: {directory}")
-
 
 df = pd.read_csv(train_csv_file,header=None, names=['file_name','label'])
 
@@ -26,7 +25,7 @@ labels = df["label"].values
 ds_train = tf.data.Dataset.from_tensor_slices((file_paths, labels))
 
 def read_image(image_file, label):
-    image = tf.io.read_file(directory + image_file)
+    image = tf.io.read_file(image_source_directory + image_file)
     image = tf.image.decode_image(image, channels=3, dtype=tf.float32)
     return image, label
 
