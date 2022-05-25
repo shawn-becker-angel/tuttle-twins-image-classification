@@ -4,11 +4,18 @@ import os
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import tensorflow as tf
-import pandas as pd
-import numpy as np
+
+# https://stackoverflow.com/a/55938423
+from tensorflow.python.framework.ops import disable_eager_execution
+disable_eager_execution()
+
 from tensorflow import keras
 from tensorflow.keras import layers
+
+import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+import random
 
 # pip install scikit-learn
 from sklearn.model_selection import train_test_split
@@ -98,21 +105,18 @@ assert len(imgs) == len(label_ones)
 # display_2_imgs
 plt.figure(figsize=[5,5])
 
-# Display the first img
-idx = 34
-plt.subplot(121)
-# curr_img = np.reshape(imgs[idx], size, size, 3)
-curr_img = imgs[idx]
-curr_lbl = labels[idx]
-plt.imshow(curr_img)
-plt.title("(Label: " + str(curr_lbl) + ")")
+# Display a random image
+def display_random_image(subplot):
+    idx = random.randrange(0,N)
+    plt.subplot(subplot)
+    # curr_img = np.reshape(imgs[idx], size, size, 3)
+    curr_img = imgs[idx]
+    curr_lbl = labels[idx]
+    plt.imshow(curr_img)
+    plt.title(f"idx:{idx} ({curr_lbl})")
 
-# Display the second img
-plt.subplot(122)
-curr_img = imgs[idx+1]
-curr_lbl = labels[idx+1]
-plt.imshow(curr_img)
-plt.title("(Label: " + str(curr_lbl) + ")")
+display_random_image(121)
+display_random_image(122)
 
 # normalize imgs
 imgs = imgs / np.max(imgs)
@@ -123,6 +127,8 @@ X_train, X_test, y_train, y_test = train_test_split(imgs, label_ones, test_size=
 
 train_X = X_train.reshape(-1, size, size, 3)
 test_X = X_test.reshape(-1, size, size, 3)
+train_y = y_train
+test_y = y_test
 
 # Data Preprocessing
 # The images are of size x size for a size x size vector V
@@ -163,8 +169,8 @@ N_CLASSES = K
 x = tf.compat.v1.placeholder("float", [None, N_INPUT, N_INPUT, 1])
 y = tf.compat.v1.placeholder("float", [None, N_CLASSES])
 
-# Initialize the variables
-init = tf.global_variables_initializer()
+# Initialize the variables - not needed for tensorflow 2.0.x.x
+# init = tf.global_variables_initializer()
 
 # Create wrappers
 def conv2d(x, W, b, strides=1):
@@ -177,19 +183,22 @@ def maxpool2d(x, k=2):
     return tf.nn.max_pool(x, ksize=[1, k, k, 1], strides=[1, k, k, 1],padding='SAME')
 
 # define your weights and biases variables
+# https://stackoverflow.com/a/59906649
+# https://stackoverflow.com/a/69264194
+# https://stackoverflow.com/a/64258851
 weights = {
-    'wc1': tf.get_variable('W0', shape=(3,3,1,32), initializer=tf.contrib.layers.xavier_initializer()),
-    'wc2': tf.get_variable('W1', shape=(3,3,32,64), initializer=tf.contrib.layers.xavier_initializer()),
-    'wc3': tf.get_variable('W2', shape=(3,3,64,128), initializer=tf.contrib.layers.xavier_initializer()),
-    'wd1': tf.get_variable('W3', shape=(4*4*128,128), initializer=tf.contrib.layers.xavier_initializer()),
-    'out': tf.get_variable('W6', shape=(128,N_CLASSES), initializer=tf.contrib.layers.xavier_initializer()),
+    'wc1': tf.Variable('W0', shape=(3,3,1,32), initializer=tf.keras.initializers.glorot_normal),
+    'wc2': tf.Variable('W1', shape=(3,3,32,64), initializer=tf.keras.initializers.glorot_normal),
+    'wc3': tf.Variable('W2', shape=(3,3,64,128), initializer=tf.keras.initializers.glorot_normal),
+    'wd1': tf.Variable('W3', shape=(4*4*128,128), initializer=tf.keras.initializers.glorot_normal),
+    'out': tf.Variable('W6', shape=(128,N_CLASSES), initializer=tf.keras.initializers.glorot_normal),
 }
 biases = {
-    'bc1': tf.get_variable('B0', shape=(32), initializer=tf.contrib.layers.xavier_initializer()),
-    'bc2': tf.get_variable('B1', shape=(64), initializer=tf.contrib.layers.xavier_initializer()),
-    'bc3': tf.get_variable('B2', shape=(128), initializer=tf.contrib.layers.xavier_initializer()),
-    'bd1': tf.get_variable('B3', shape=(128), initializer=tf.contrib.layers.xavier_initializer()),
-    'out': tf.get_variable('B4', shape=(N_CLASSES), initializer=tf.contrib.layers.xavier_initializer()),
+    'bc1': tf.Variable('B0', shape=(32), initializer=tf.keras.initializers.glorot_normal),
+    'bc2': tf.Variable('B1', shape=(64), initializer=tf.keras.initializers.glorot_normal),
+    'bc3': tf.Variable('B2', shape=(128), initializer=tf.keras.initializers.glorot_normal),
+    'bd1': tf.Variable('B3', shape=(128), initializer=tf.keras.initializers.glorot_normal),
+    'out': tf.Variable('B4', shape=(N_CLASSES), initializer=tf.keras.initializers.glorot_normal),
 }
 
 def conv_net(x, weights, biases):  
@@ -246,9 +255,9 @@ with tf.Session() as sess:
     test_accuracy = []
     summary_writer = tf.summary.FileWriter('./Output', sess.graph)
     for i in range(EPOCHS):
-        for batch in range(len(train_X)//batch_size):
-            batch_x = train_X[batch*batch_size:min((batch+1)*batch_size,len(train_X))]
-            batch_y = train_y[batch*batch_size:min((batch+1)*batch_size,len(train_y))]    
+        for batch in range(len(train_X)//BATCH_SIZE):
+            batch_x = train_X[batch*BATCH_SIZE:min((batch+1)*BATCH_SIZE,len(train_X))]
+            batch_y = train_y[batch*BATCH_SIZE:min((batch+1)*BATCH_SIZE,len(train_y))]    
             # Run optimization op (backprop).
                 # Calculate batch loss and accuracy
             opt = sess.run(optimizer, feed_dict={x: batch_x, y: batch_y})
