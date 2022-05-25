@@ -9,6 +9,7 @@
 # python3.8 -m pip install --upgrade pip
 # SYSTEM_VERSION_COMPAT=0 pip install tensorflow-macos tensorflow-metal
 # pip install tensorflow_datasets
+
 from sklearn.semi_supervised import LabelSpreading
 import tensorflow as tf
 # import tensorflow_datasets as tfds
@@ -23,10 +24,7 @@ with tf.device('/GPU'):
     print("a:", a)
     print("b:", b)
 
-#=================================
-# CONSTANTS
-#=================================
-
+# Constants
 IMAGE_SIZE = 128
 NUM_CLASSES = 5
 BATCH_SIZE = 64
@@ -38,9 +36,8 @@ if not os.path.isdir(IMAGE_SOURCE_DIRECTORY):
     raise Exception(f"no such directory: {IMAGE_SOURCE_DIRECTORY}")
 
 
-#=================================
-# HELPER FUNCTIONS
-#=================================
+
+# helper functions
 
 def read_image(file_name, label):
     image = tf.io.read_file(
@@ -82,6 +79,7 @@ def get_dataset_partitions_tf(
     
     return train_ds, val_ds, test_ds
 
+
 # read the train data file into train_df
 train_csv_file =  "../csv-data/train_data.csv"
 if not os.path.isfile(train_csv_file):
@@ -107,26 +105,28 @@ N = len(file_names)
 assert len(labels == N)
 
 # create ds_train, the train dataset
-
 ds_train = tf.data.Dataset.from_tensor_slices((file_names, labels))
 
 ds_train = ds_train.map(read_image).map(augment_image).batch(16)
 
+# split out ds_test and ds_pred from ds_train
 (ds_train, ds_test, ds_pred) = get_dataset_partitions_tf(
     ds_train, N, train_split=0.8, test_split=0.1, pred_split=0.1, 
     shuffle=True, shuffle_size=10000)
 
+# prep ds_train
 ds_train = ds_train.map(normalize_image, num_parallel_calls=AUTOTUNE)
 ds_train = ds_train.cache()
 # ds_train = ds_train.shuffle(ds_info.splits['train'].num_examples)
 ds_train = ds_train.batch(BATCH_SIZE)
 ds_train = ds_train.prefetch(AUTOTUNE)
 
+# prep ds_test
 ds_test = ds_test.map(normalize_image, num_parallel_calls=AUTOTUNE)
 ds_test = ds_test.cache()
 ds_test = ds_test.batch(BATCH_SIZE)
 
-print('\ncreate and compile model')
+print('\ncreate the model')
 model = tf.keras.Sequential([
     tf.keras.layers.Conv2D(16, 3, padding='same', activation='relu'),
     tf.keras.layers.MaxPooling2D(),
@@ -139,6 +139,7 @@ model = tf.keras.Sequential([
     tf.keras.layers.Dense(NUM_CLASSES)
 ])
 
+print('\ncompile the model')
 model.compile(
     optimizer='rmsprop',
     loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
