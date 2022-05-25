@@ -93,7 +93,7 @@ for i in range(N):
     img = cv2.imread(jpg_file)
     assert img is not None
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = cv2.resize(img, dim, interpolation=cv2.INTER_AREA)
+    img = cv2.resize(img, dim, method= preserve_aspect_ratio=False, antialias=True)
     imgs.append(img)
 
 imgs = np.array(imgs)
