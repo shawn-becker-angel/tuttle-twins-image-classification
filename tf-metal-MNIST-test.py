@@ -43,7 +43,7 @@ def normalize_img(image, label):
 
 ds_train = ds_train.map(normalize_img, num_parallel_calls=AUTOTUNE)
 ds_train = ds_train.cache()
-ds_train = ds_train.shuffle(ds_info.splits['train'].num_examples)
+ds_train = ds_train.shuffle(round(1.5 * ds_info.splits['train'].num_examples))
 ds_train = ds_train.batch(BATCH_SIZE)
 ds_train = ds_train.prefetch(AUTOTUNE)
 

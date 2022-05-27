@@ -34,6 +34,12 @@ from keras.layers import Input, Dense, Activation, Flatten, Dropout, BatchNormal
 from keras.layers import Conv2D, MaxPooling2D
 from keras import regularizers, optimizers
 
+# pip install matplotlib
+import matplotlib
+print("matplotlib.version:", matplotlib.__version__)
+
+import matplotlib.pyplot as plt
+
 # verify use of GPU
 tf.config.list_physical_devices()
 with tf.device('/GPU'):
@@ -85,6 +91,7 @@ train_generator = datagen.flow_from_dataframe(
     class_mode="categorical",
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
 
+# print("train_generator class_names:", train_generator.class_names)
 NUM_CLASSES = len(train_generator.class_indices)
 
 labels_to_ints = train_generator.class_indices
@@ -145,7 +152,7 @@ model.compile(optimizers.RMSprop(learning_rate=0.0001),
 loss="categorical_crossentropy", metrics=["accuracy"])
 STEP_SIZE_TRAIN=train_generator.n//train_generator.batch_size
 STEP_SIZE_VALID=valid_generator.n//valid_generator.batch_size
-model.fit_generator(
+train_valid_history = model.fit_generator(
     generator=train_generator,
     steps_per_epoch=STEP_SIZE_TRAIN,
     validation_data=valid_generator,
@@ -159,9 +166,62 @@ print('Test accuracy:', score[1])
 predict=model.predict_generator(test_generator, steps = len(test_generator.filenames))
 
 y_classes = predict.argmax(axis=-1)
-filenames = test_generator.filenames
-assert len(y_classes) == len(filenames)
+y_filenames = test_generator.filenames
+assert len(y_classes) == len(y_filenames)
 
-for i in range(len(y_classes)):
-    label = ints_to_labels[y_classes[i]]
-    print(f"predicted label:{label} for filename[{i}]:{filenames[i]}")
+y_labels = [ints_to_labels[y_classes[i]] for i in range(len(y_classes))]
+
+
+def list_labels_with_filenames(name, labels, filenames):
+    for i in range(len(labels)):
+        label = labels[i]
+        filename = filenames[i]
+        print(f"{name} label:{label} for filename:{filename}")
+
+#     plt.figure(figsize=(10, 10))
+#     for images, labels in data_generator.class_names.take(1):
+#         for i in range(9):
+#             ax = plt.subplot(3, 3, i + 1)
+#             plt.imshow(images[i].numpy().astype("uint8"))
+#             plt.title(class_names[labels[i]])
+#             plt.axis("off")
+
+list_labels_with_filenames("predicted", y_labels, y_filenames,)
+
+def plot_train_valid_history(history):
+    acc = history.history['accuracy']
+    val_acc = history.history['val_accuracy']
+
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
+
+    epochs_range = range(EPOCHS)
+
+    plt.figure(figsize=(8, 8))
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs_range, acc, label='Training Accuracy')
+    plt.plot(epochs_range, val_acc, label='Validation Accuracy')
+    plt.legend(loc='lower right')
+    plt.title('Training and Validation Accuracy')
+
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs_range, loss, label='Training Loss')
+    plt.plot(epochs_range, val_loss, label='Validation Loss')
+    plt.legend(loc='upper right')
+    plt.title('Training and Validation Loss')
+    plt.show()
+
+plot_train_valid_history(train_valid_history)
+
+# def plot_data_generator_images(name, data_generator):
+#     '''plot one image for each class'''
+#     plt.figure(figsize=(10, 10))
+#     for images, labels in data_generator.class_names.take(1):
+#         for i in range(9):
+#             ax = plt.subplot(3, 3, i + 1)
+#             plt.imshow(images[i].numpy().astype("uint8"))
+#             plt.title(class_names[labels[i]])
+#             plt.axis("off")
+
+# plot_data_generator_images("train", train_generator)
+
