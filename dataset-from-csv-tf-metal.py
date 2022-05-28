@@ -9,24 +9,20 @@
 # python3.8 -m pip install --upgrade pip
 # SYSTEM_VERSION_COMPAT=0 pip install tensorflow-macos tensorflow-metal
 # pip install tensorflow_datasets
+# pip uninstall PIL
+# pip install Image
+# pip uninstall keras-preprocessing
+# pip install git+https://github.com/keras-team/keras-preprocessing.git
+
+# Import from keras_preprocessing not from keras.preprocessing
+# see https://vijayabhaskar96.medium.com/tutorial-on-keras-flow-from-dataframe-1fd4493d237c
+
+import pandas as pd
+import numpy as np
 import os
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import tensorflow as tf
-# import tensorflow_datasets as tfds
-
-# pip uninstall PIL
-# pip install Image
-
-import pandas as pd
-import numpy as np
-
-import os
-
-# see https://vijayabhaskar96.medium.com/tutorial-on-keras-flow-from-dataframe-1fd4493d237c
-# pip uninstall keras-preprocessing
-# pip install git+https://github.com/keras-team/keras-preprocessing.git
-# Import from keras_preprocessing not from keras.preprocessing
 
 from keras.models import Sequential
 from keras.preprocessing.image import ImageDataGenerator
@@ -34,13 +30,15 @@ from keras.layers import Input, Dense, Activation, Flatten, Dropout, BatchNormal
 from keras.layers import Conv2D, MaxPooling2D
 from keras import regularizers, optimizers
 
-# pip install matplotlib
-import matplotlib
-print("matplotlib.version:", matplotlib.__version__)
+from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 
-import matplotlib.pyplot as plt
+from matplotlib_utils import \
+    plot_random_generator_images_with_labels, \
+    plot_random_imagefiles_with_labels, \
+    plot_random_generator_images_no_labels, \
+    plot_history, save_history
 
-# verify use of GPU
+# verify availability of GPU
 tf.config.list_physical_devices()
 with tf.device('/GPU'):
     a = tf.random.normal(shape=(2,), dtype=tf.float32)
@@ -75,6 +73,9 @@ print("orig_N:", orig_N, "N:", N)
 train_df = train_df[:N]
 test_df = test_df[:N]
 
+#------------------------------------
+# Train
+
 datagen = ImageDataGenerator(rescale=1./255.,validation_split=0.25)
 
 train_generator = datagen.flow_from_dataframe(
@@ -89,13 +90,17 @@ train_generator = datagen.flow_from_dataframe(
     drop_duplicates=False, # not needed
     validate_filenames=False, # not needed
     class_mode="categorical",
+    interpolation="box",
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
 
 # print("train_generator class_names:", train_generator.class_names)
-NUM_CLASSES = len(train_generator.class_indices)
+CLASSES = list(train_generator.class_indices.keys())
+NUM_CLASSES = len(CLASSES)
 
-labels_to_ints = train_generator.class_indices
-ints_to_labels = {y: x for x, y in labels_to_ints.items()}
+plot_random_generator_images_with_labels("train", train_generator)
+
+#------------------------------------
+# Validation
 
 valid_generator = datagen.flow_from_dataframe(
     dataframe=train_df,
@@ -109,7 +114,15 @@ valid_generator = datagen.flow_from_dataframe(
     drop_duplicates=False, # not needed
     validate_filenames=False, # not needed
     class_mode="categorical",
+    interpolation="box",
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
+
+assert (len(valid_generator.filenames) + len(train_generator.filenames)) == len(train_df)
+
+plot_random_generator_images_with_labels("valid", valid_generator)
+
+#------------------------------------
+# Test
 
 test_datagen = ImageDataGenerator(rescale=1./255.)
 
@@ -124,7 +137,27 @@ test_generator = test_datagen.flow_from_dataframe(
     drop_duplicates=False, # not needed
     validate_filenames=False, # not needed
     class_mode=None, # images only
+    interpolation="box",
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
+
+true_test_generator = test_datagen.flow_from_dataframe(
+    dataframe=test_df,
+    directory="../src-images/",
+    x_col="filename",
+    y_col="label",
+    batch_size=BATCH_SIZE,
+    seed=42,
+    shuffle=False, # not needed for testing
+    drop_duplicates=False, # not needed
+    validate_filenames=False, # not needed
+    class_mode="categorical", # images only
+    interpolation="box",
+    target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
+
+assert true_test_generator.filenames == test_generator.filenames
+
+plot_random_generator_images_no_labels("test", test_generator)
+plot_random_generator_images_with_labels("true_test", true_test_generator)
 
 model = Sequential()
 model.add(Conv2D(32, (3, 3), padding='same',
@@ -148,10 +181,15 @@ model.add(Activation('relu'))
 model.add(Dropout(0.5))
 model.add(Dense(NUM_CLASSES, activation='softmax'))
 
-model.compile(optimizers.RMSprop(learning_rate=0.0001),
-loss="categorical_crossentropy", metrics=["accuracy"])
+model.compile(
+    optimizers.RMSprop(learning_rate=0.0001),
+    loss="categorical_crossentropy", 
+    metrics=["accuracy"])
+
 STEP_SIZE_TRAIN=train_generator.n//train_generator.batch_size
 STEP_SIZE_VALID=valid_generator.n//valid_generator.batch_size
+
+# update the model so that model(train) gradually matches model(valid)
 train_valid_history = model.fit_generator(
     generator=train_generator,
     steps_per_epoch=STEP_SIZE_TRAIN,
@@ -163,65 +201,64 @@ score = model.evaluate_generator(valid_generator)
 print('Test loss:', score[0])
 print('Test accuracy:', score[1])
 
-predict=model.predict_generator(test_generator, steps = len(test_generator.filenames))
+# save_history(filename="train-valid-history", history=train_valid_history)
+# plot_history(name="train-valid-history", history=train_valid_history)
 
-y_classes = predict.argmax(axis=-1)
-y_filenames = test_generator.filenames
-assert len(y_classes) == len(y_filenames)
+# Confusion Matrix and Classification Report
+Y_valid_pred = model.predict_generator(valid_generator)
+y_valid_pred = np.argmax(Y_valid_pred, axis=1)
 
-y_labels = [ints_to_labels[y_classes[i]] for i in range(len(y_classes))]
+print('Confusion Matrix')
+print(confusion_matrix(valid_generator.classes, y_valid_pred))
 
+print('Classification Report')
+index_to_class = {value:key for key, value in valid_generator.class_indices.items()}
+target_names = [index_to_class[idx] for idx in np.unique(y_valid_pred)]
 
-def list_labels_with_filenames(name, labels, filenames):
-    for i in range(len(labels)):
-        label = labels[i]
-        filename = filenames[i]
-        print(f"{name} label:{label} for filename:{filename}")
+assert len(y_valid_pred) == len(valid_generator.classes)
 
-#     plt.figure(figsize=(10, 10))
-#     for images, labels in data_generator.class_names.take(1):
-#         for i in range(9):
-#             ax = plt.subplot(3, 3, i + 1)
-#             plt.imshow(images[i].numpy().astype("uint8"))
-#             plt.title(class_names[labels[i]])
-#             plt.axis("off")
+pred_classes_set = set(y_valid_pred)
+valid_classes_set = set(valid_generator.classes)
+if pred_classes_set != valid_classes_set:
+    print(f"INFO: pred classes: {pred_classes_set} != valid_classes_set: {valid_classes_set}")
 
-list_labels_with_filenames("predicted", y_labels, y_filenames,)
+# use the model to get class predictions for each image in the test dataset
+Y_test_pred = model.predict_generator(test_generator) # each image has NUM_CLASSES [0..1] prediction probabilities
+y_test_pred = np.argmax(Y_test_pred, axis=1) # each image has a class index with the highest prediction probability
+assert len(Y_test_pred) == len(y_test_pred)
 
-def plot_train_valid_history(history):
-    acc = history.history['accuracy']
-    val_acc = history.history['val_accuracy']
+# get the actual Images (x_test_true) and actual classes (y_test_true) from the test dataset
+x_test_true, y_test_true = next(true_test_generator)
+assert len(x_test_true) == len(y_test_true)
 
-    loss = history.history['loss']
-    val_loss = history.history['val_loss']
+# assert len(test_generator.filenames) == len(x_test_true)
+# assert set(test_generator.filenames) == set(x_test_true)
+# assert test_generator.filenames == x_test_true
 
-    epochs_range = range(EPOCHS)
+filenames = test_generator.filenames
+num_images = len(filenames)
+assert len(y_test_pred) == num_images
 
-    plt.figure(figsize=(8, 8))
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs_range, acc, label='Training Accuracy')
-    plt.plot(epochs_range, val_acc, label='Validation Accuracy')
-    plt.legend(loc='lower right')
-    plt.title('Training and Validation Accuracy')
+# assert len(y_test_true) == num_images
 
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs_range, loss, label='Training Loss')
-    plt.plot(epochs_range, val_loss, label='Validation Loss')
-    plt.legend(loc='upper right')
-    plt.title('Training and Validation Loss')
-    plt.show()
+# Plot image_files with pred/true_test classes (aka labels) 
+pred_v_true_labels = [ f"{y_test_pred[i]}[{i}]/{y_test_true[i]}[{i}]" for i in range(num_images) ]
+pred_v_true_filenames = x_test_true
+plot_random_imagefiles_with_labels("test dataset pred vs true classes", pred_v_true_filenames, pred_v_true_labels)
 
-plot_train_valid_history(train_valid_history)
+# Plot the confusion matrix  of pred vs true
+pred_true_display_labels = test_generator.class_indices.keys()
+cm = confusion_matrix(y_test_pred, y_test_true)
+disp = ConfusionMatrixDisplay(
+    confusion_matrix=cm, 
+    display_labels=pred_true_display_labels)
+disp.plot(cmap=plt.cm.Blues)
+print(f"Showing pred vs true labels")
+print(f"Click key or mouse in window to close.")
+plt.waitforbuttonpress()
+plt.close("all")
+plt.show(block=False)
 
-# def plot_data_generator_images(name, data_generator):
-#     '''plot one image for each class'''
-#     plt.figure(figsize=(10, 10))
-#     for images, labels in data_generator.class_names.take(1):
-#         for i in range(9):
-#             ax = plt.subplot(3, 3, i + 1)
-#             plt.imshow(images[i].numpy().astype("uint8"))
-#             plt.title(class_names[labels[i]])
-#             plt.axis("off")
+print("done")
 
-# plot_data_generator_images("train", train_generator)
 
