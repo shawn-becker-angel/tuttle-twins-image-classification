@@ -1,13 +1,34 @@
 import os
+import sys
 import cv2
-# pip install opencv-python
 
+# python3 -m pip install --upgrade pip
+# python3 -m pip install --upgrade Pillow
 from PIL import Image
 
+# pip install keras-utils
+from keras.utils import load_img, img_to_array
+
+# pip install opencv-python
+from cv2 import imread, resize
+
+SRC_IMAGES_DIR = "../src-images"
+
+#
+# Example usage:
+#
+# activate
+# python verify-images-readability.py ../src-images
+#
+
 def verify_images_readable(dir):
-    '''Verify that all images under dir can be read using cv2.imread'''
+    '''Verify that all images under dir can be read using cv2 and Image'''
+    
+    print("verifying readability of all jpg files under", directory)
+    
     bad_list=[]
     good_list=[]
+    cnt = 0
     good_exts=['jpg'] # make a list of acceptable image file types
     for f in os.listdir(dir) :  # iterate through the directory of all image files
         f_path=os.path.join(dir, f) # path to image files
@@ -18,8 +39,11 @@ def verify_images_readable(dir):
         else:
             try:
                 test_cv2_imread(f_path)
-                test_PIL_load_image(f_path)
+                test_Image_load_image(f_path)
                 good_list.append(f_path)
+                cnt += 1
+                if (cnt % 1000) == 0:
+                    print("image cnt:", cnt)
             except Exception as exp:
                 print(f'file {f_path} raises {type(exp)} {str(exp)}')
                 bad_list.append(f_path)
@@ -28,19 +52,25 @@ def verify_images_readable(dir):
 
 def test_cv2_imread(f_path):
     img=cv2.imread(f_path)
-    size=img.shape
+    dim = [100,100]
+    resized = cv2.resize(img, dim, interpolation=cv2.INTER_AREA)
 
-def test_PIL_load_image(fpath):
-    image = load_img(filename, target_size=(230,230))
+def test_Image_load_image(f_path):
+    dim = (230,230)
+    img = load_img(f_path, target_size=dim)
     # convert the image pixels to a numpy array
-    image = img_to_array(image)
+    img = img_to_array(img)
     # reshape data for the model
-    image = image.reshape((1, image.shape[0], image.shape[1], image.shape[2]))
+    img = img.reshape((1, img.shape[0], img.shape[1], img.shape[2]))
 
 if __name__ == "__main__":
+    directory = SRC_IMAGES_DIR
+    
+    if len(sys.argv) > 1:
+        directory = sys.argv[1]
 
-    SRC_IMAGES_DIR = "../src-images"
-    good_list, bad_list = verify_images_readable(SRC_IMAGES_DIR)
+    
+    good_list, bad_list = verify_images_readable(dir=directory)
 
     if len(bad_list) > 0:
         print("bad_list:")
