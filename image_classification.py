@@ -35,8 +35,9 @@ from sklearn.metrics import classification_report, confusion_matrix, ConfusionMa
 from matplotlib_utils import \
     plot_random_generator_images_with_labels, \
     plot_random_imagefiles_with_labels, \
-    plot_random_generator_images_no_labels, \
-    plot_history, save_history
+    plot_random_generator_images_no_labels
+    
+from history import plot_history, save_history
 
 # verify availability of GPU
 tf.config.list_physical_devices()
@@ -65,13 +66,18 @@ test_df = pd.read_csv("../csv-data/test_data.csv",header=None, names=['filename'
 # divisible by 32, the test batch_size, it must also be
 # divisible  by 4, the validation split (but 32 is already a multiple of 4)\
 
+# truncate the dataframes to N
 orig_N = len(train_df)
 N = (orig_N // BATCH_SIZE) * BATCH_SIZE
 print("orig_N:", orig_N, "N:", N)
-
-# truncate the dataframes to N
 train_df = train_df[:N]
-test_df = test_df[:N]
+
+
+orig_test_N = len(test_df)
+test_N = (orig_test_N // BATCH_SIZE) * BATCH_SIZE
+print("orig_test_N:", orig_test_N, "test_N:", test_N)
+test_df = test_df[:test_N]
+
 
 #------------------------------------
 # Train
