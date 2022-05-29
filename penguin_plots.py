@@ -94,5 +94,25 @@ sns.jointplot(
     kind="kde")
 show_with_title(title)
 
+
+title = "HEATMAP from DataFrame"
+array = [[13,1,1,0,2,0],
+         [3,9,6,0,1,0],
+         [0,0,16,2,0,0],
+         [0,0,0,13,0,0],
+         [0,0,0,0,15,0],
+         [0,0,1,0,0,15]]
+
+df_cm = pd.DataFrame(array, range(6), range(6))
+# plt.figure(figsize=(10,7))
+sns.set(font_scale=1.4) # for label size
+# see https://seaborn.pydata.org/tutorial/color_palettes.html
+# sns.color_palette(None) returns current palette
+sns.color_palette("flare", as_cmap=True) 
+sns.heatmap(df_cm, annot=True, annot_kws={"size": 16}) # font size
+show_with_title(title)
+
+
+
 print("done")
 
