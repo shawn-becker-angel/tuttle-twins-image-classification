@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 from typing import List
 
+from numpy.random import default_rng
+
 def wait_for_click():
     print(f"Click key or mouse in window to close.")
     plt.waitforbuttonpress()
@@ -16,7 +18,7 @@ def wait_for_click():
 def get_unique_random_ints(minVal: int, maxVal: int, N: int):
     '''Return a list of N unique int values x such that minVal <= x < maxVal'''
     s = set()
-    for n, x in enumerate(list(np.random.uniform(minVal,maxVal,N*2))) : 
+    for n, x in enumerate(list(np.random.default_rng().uniform(minVal,maxVal,N*2))) : 
         if x not in s:
             s.add(x)
     if len(s) >= N:
@@ -44,7 +46,7 @@ def plot_random_generator_images_no_labels(name, generator):
     X = X[1:]  # strip off batch dimension
     N = 12 # number of images
     fig = plt.figure(figsize=(12,8))
-    random_ints = get_unique_random_ints(0,len(X)+1,N)
+    random_ints = get_unique_random_ints(0,len(X),N)
     for n in range(N):
         i = random_ints[n]
         plt.subplot(3,4,n+1)
@@ -112,7 +114,8 @@ def plot_histogram(title: str='Title', data: List[float]=[], shape: float=1, sca
 
 def test_N_lists_of_unique_random_ints():
     data = list()
-    for i in range(100):
+    N = 100
+    for i in range(N):
         check = test_get_list_of_unique_random_ints()
         data.extend(check)
     plot_histogram(title="uniform random ints", data=data, shape=1., scale=1.)

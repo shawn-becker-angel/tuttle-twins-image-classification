@@ -27,9 +27,10 @@ def show_with_title(title):
     print(f"waiting for you close '{title}'")
     plt.show()
 
-title = "DataFrame HIST of univariate"
+title = "plt DataFrame HIST of univariate"
 plt.figure()
-penguins['flipper_length_mm'].hist(
+df = penguins['flipper_length_mm']
+df.hist(
     bins=50, 
     color='black', 
     alpha=0.5)
@@ -37,7 +38,7 @@ plt.xlabel("Flipper Length mm")
 plt.ylabel("Frequency")
 show_with_title(title)
 
-title = "DISPLOT of DataFrame univariate with KDE"
+title = "sns DISPLOT of DataFrame univariate with KDE"
 sns.displot(
     penguins, 
     bins=50,
@@ -54,25 +55,25 @@ cov = [(2, .4), (.4, .2)]
 rng = np.random.RandomState(0)
 x, y = rng.multivariate_normal(mean, cov, n).T
 
-title = "combo HISTOGRAM and SCATTERPLOT with DENSITY CONTOURS"
+title = "combo sns HISTOGRAM and SCATTERPLOT with DENSITY CONTOURS"
 f, ax = plt.subplots(figsize=(6, 6))
 sns.scatterplot(x=x, y=y, s=5, color=".15")
 sns.histplot(x=x, y=y, bins=50, pthresh=.1, cmap="mako")
 sns.kdeplot(x=x, y=y, levels=5, color="w", linewidths=1)
 show_with_title(title)
 
-title = "PAIR PLOT of 4 attributes"
+title = "sns PAIR PLOT of 4 attributes"
 sns.pairplot(penguins)
 show_with_title(title)
 
-title = "PAIR GRID of 4 attributes using HISTPLOT, KDEPLOT, and HISTPLOT+KDE"
+title = "sns PAIR GRID of 4 attributes using HISTPLOT, KDEPLOT, and HISTPLOT+KDE"
 g = sns.PairGrid(penguins)
 g.map_upper(sns.histplot)
 g.map_lower(sns.kdeplot, fill=True)
 g.map_diag(sns.histplot, kde=True)
 show_with_title(title)
 
-title = "DISPLOT of bivariate with KDE"
+title = "sns DISPLOT of bivariate with KDE"
 sns.displot(
     data=penguins, 
     x="bill_length_mm", 
@@ -81,11 +82,11 @@ sns.displot(
     kind="kde")
 show_with_title(title)
 
-title = "JOINTPLOT with MARGINAL DISTRIBUTIONS"
+title = "sns JOINTPLOT with MARGINAL DISTRIBUTIONS"
 sns.jointplot(data=penguins, x="bill_length_mm", y="bill_depth_mm")
 show_with_title(title)
 
-title = "JOINTPLOT with MARGINAL KDE DISTRIBUTIONS"
+title = "sns JOINTPLOT with MARGINAL KDE DISTRIBUTIONS"
 sns.jointplot(
     data=penguins,
     x="bill_length_mm", 
@@ -95,7 +96,7 @@ sns.jointplot(
 show_with_title(title)
 
 
-title = "HEATMAP from DataFrame"
+title = "sns HEATMAP from DataFrame"
 array = [[13,1,1,0,2,0],
          [3,9,6,0,1,0],
          [0,0,16,2,0,0],

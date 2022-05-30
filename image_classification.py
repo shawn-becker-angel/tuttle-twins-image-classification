@@ -31,6 +31,7 @@ from keras.layers import Conv2D, MaxPooling2D
 from keras import regularizers, optimizers
 
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.model_selection import ShuffleSplit
 
 from matplotlib_utils import \
     plot_random_generator_images_with_labels, \
@@ -47,56 +48,85 @@ with tf.device('/GPU'):
     print("a:", a)
     print("b:", b)
 
-# Constants
-IMAGE_SIZE = 128
-IMAGE_HEIGHT = IMAGE_SIZE
-IMAGE_WIDTH = IMAGE_SIZE
 
 # batch_size must evenly divide the length of the dataset exactly
 # because for the test set, you should sample the images exactly once
 BATCH_SIZE = 32
 EPOCHS = 50
 
+CSV_DATA_FILE = "../csv-data/S01E01-S01E02-data.csv"
 IMAGE_SOURCE_DIRECTORY = "../src-images/"
 
-train_df = pd.read_csv("../csv-data/train_data.csv",header=None, names=['filename','label'])
-test_df = pd.read_csv("../csv-data/test_data.csv",header=None, names=['filename','label'])
+# Constants
+FILE_IMAGE_HEIGHT = 288
+FILE_IMAGE_WIDTH = 512
+
+IMAGE_HEIGHT = FILE_IMAGE_HEIGHT / 2
+IMAGE_WIDTH = FILE_IMAGE_WIDTH / 2
 
 # the number of samples used, N, must be 
 # divisible by 32, the test batch_size, it must also be
 # divisible  by 4, the validation split (but 32 is already a multiple of 4)\
+N = 1024
+assert (N // BATCH_SIZE) * BATCH_SIZE == N
 
-# truncate the dataframes to N
-orig_N = len(train_df)
-N = (orig_N // BATCH_SIZE) * BATCH_SIZE
-print("orig_N:", orig_N, "N:", N)
-train_df = train_df[:N]
+# read CSV_DATA_FILE, which 
+# has 55352 rows for all tuttle_twins frames in S01E01 and S01E02
+# and has undergone 10 iterations of shuffling/resampling
 
+data_df = pd.read_csv(CSV_DATA_FILE,header=None, names=['filename','label'], nrows=N)
+assert len(data_df) == N
 
-orig_test_N = len(test_df)
-test_N = (orig_test_N // BATCH_SIZE) * BATCH_SIZE
-print("orig_test_N:", orig_test_N, "test_N:", test_N)
-test_df = test_df[:test_N]
+#------------------------------------
+# Split the dataset
 
+X_data = data_df['filename'].to_list()
+y_data = data_df['label'].to_list();
+
+# do our own label-to-int categorization on the incoming labels
+label_map = { 'Junk':0, 'Common':1, 'Uncommon':2, 'Rare':3, 'Legendary':4 }
+y_data = [label_map[label] for label in y_data]
+
+# split data into .9 train and .1 test
+train_indices, test_indicies = ShuffleSplit(n_splits=10, train_size=.9, test_size=.1, random_state=123) 
+X_train = X_data[train_indices]
+y_train = y_data[train_indices]
+X_test = X_data[test_indicies]
+y_test = y_data[test_indicies]
+
+# split train into .7 train and .3 valid
+train_train_indices, train_valid_indicies = ShuffleSplit(train_size=.7, test_size=.3, random_state=123) 
+X_train = X_train[train_train_indices]
+y_train = y_train[train_train_indices]
+X_valid = X_train[train_valid_indicies]
+y_valid = y_train[train_valid_indicies]
+
+# yields .9x.7 train + .9x.3 valid + 0.1 test = 1.0 data
+
+# concat X and y arrays horizontally to create dataframes
+train_df = pd.concat([X_train,y_train], axis=1)
+valid_df = pd.concat([X_valid,y_valid], axis=1)
+test_df = pd.concat([X_test,y_test], axis=1)
+assert len(train_df) + len(valid_df) + len(test_df) == N
 
 #------------------------------------
 # Train
 
-datagen = ImageDataGenerator(rescale=1./255.,validation_split=0.25)
+datagen = ImageDataGenerator(rescale=1./255)
 
 train_generator = datagen.flow_from_dataframe(
     dataframe=train_df,
     directory="../src-images/",
     x_col="filename",
     y_col="label",
-    subset="training",
+    subset=None,
     batch_size=BATCH_SIZE,
     seed=42,
     shuffle=True,
     drop_duplicates=False, # not needed
     validate_filenames=False, # not needed
-    class_mode="categorical",
-    interpolation="box",
+    class_mode=None, # we did our own categorization
+    interpolation="box",  # prevents antialiasing if subsampling
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
 
 # print("train_generator class_names:", train_generator.class_names)
@@ -165,7 +195,11 @@ assert true_test_generator.filenames == test_generator.filenames
 plot_random_generator_images_no_labels("test", test_generator)
 plot_random_generator_images_with_labels("true_test", true_test_generator)
 
+# We need to shuffle the training data for each epoch
+# https://datascience.stackexchange.com/a/24524
+
 model = Sequential()
+
 model.add(Conv2D(32, (3, 3), padding='same',
                  input_shape=(IMAGE_HEIGHT,IMAGE_WIDTH,3)))
 model.add(Activation('relu'))
