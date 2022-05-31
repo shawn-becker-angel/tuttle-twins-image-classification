@@ -38,7 +38,7 @@ from matplotlib_utils import \
     plot_random_imagefiles_with_labels, \
     plot_random_generator_images_no_labels
     
-from history import plot_history, save_history
+from history_utils import plot_history, save_history
 
 # verify availability of GPU
 tf.config.list_physical_devices()
@@ -71,11 +71,13 @@ N = 1024
 assert (N // BATCH_SIZE) * BATCH_SIZE == N
 
 # read CSV_DATA_FILE, which 
-# has 55352 rows for all tuttle_twins frames in S01E01 and S01E02
-# and has undergone 10 iterations of shuffling/resampling
+# has 55352 rows for all tuttle_twins frames from S01E01 to S01E02
+# and has already undergone 10 iterations of shuffling/resampling
 
-data_df = pd.read_csv(CSV_DATA_FILE,header=None, names=['filename','label'], nrows=N)
-assert len(data_df) == N
+data_df = pd.read_csv(CSV_DATA_FILE,header=None, names=['filename','label'])
+
+# keep only 1 out of 24 frames
+data_df = data_df.iloc[::24, :]
 
 #------------------------------------
 # Split the dataset
@@ -83,19 +85,43 @@ assert len(data_df) == N
 X_data = data_df['filename'].to_list()
 y_data = data_df['label'].to_list();
 
-# do our own label-to-int categorization on the incoming labels
+# # do our own label-to-int categorization on the incoming labels
 label_map = { 'Junk':0, 'Common':1, 'Uncommon':2, 'Rare':3, 'Legendary':4 }
 y_data = [label_map[label] for label in y_data]
 
-# split data into .9 train and .1 test
-train_indices, test_indicies = ShuffleSplit(n_splits=10, train_size=.9, test_size=.1, random_state=123) 
-X_train = X_data[train_indices]
-y_train = y_data[train_indices]
-X_test = X_data[test_indicies]
-y_test = y_data[test_indicies]
+# validation and test data are shuffled only at start
+# training set is shuffled on each epocn
+
+# define data splits
+train_perc = 0.70
+valid_perc = 0.20
+test_perc = 1.0
+
+# shuffle and split data into train and other
+# shuffle and split other into valid and test
+
+
+rs1 = ShuffleSplit(n_splits=1, train_size=0.9, test_size=0.1, random_state=123) 
+
+data_idx = range(0,len(X_data))
+for a, b in rs1.split(data_idx):
+    train_idx.append(a)
+    test_idx.append(b)
 
 # split train into .7 train and .3 valid
-train_train_indices, train_valid_indicies = ShuffleSplit(train_size=.7, test_size=.3, random_state=123) 
+rs2 = ShuffleSplit(n_splits=1, train_size=0.7, test_size=0.3, random_state=456) 
+train_train_idx = []
+train_valid_idx = []
+for c, d in rs2.split(train_idx):
+    train_train_idx.append(c)
+    train_valid_idx.append(d)
+
+print(f"train_idx:{train_train_idx}")
+print(f"valid_idx:{train_valid_idx}")
+print(f"test_idx:{test_idx}")
+
+
+
 X_train = X_train[train_train_indices]
 y_train = y_train[train_train_indices]
 X_valid = X_train[train_valid_indicies]
@@ -122,7 +148,7 @@ train_generator = datagen.flow_from_dataframe(
     subset=None,
     batch_size=BATCH_SIZE,
     seed=42,
-    shuffle=True,
+    shuffle=False,
     drop_duplicates=False, # not needed
     validate_filenames=False, # not needed
     class_mode=None, # we did our own categorization
