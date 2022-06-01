@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from typing import List
+import random
 
 from numpy.random import default_rng
 
@@ -17,35 +18,34 @@ def wait_for_click():
 
 def get_unique_random_ints(minVal: int, maxVal: int, N: int):
     '''Return a list of N unique int values x such that minVal <= x < maxVal'''
-    s = set()
-    for n, x in enumerate(list(np.random.default_rng().uniform(minVal,maxVal,N*2))) : 
-        if x not in s:
-            s.add(x)
-    if len(s) >= N:
-        return list(s)[:N]
-    raise Exception(f"ERROR: can't find {N} unique ints in {N*2} attempts")
+    rints = []
+    for n in range(N*2):
+        rint = np.random.randint(minVal, maxVal)
+        if not rint in rints:
+            rints.append(rint)
+        if len(rints) == N:
+            return rints
 
-def plot_random_generator_images_with_labels(name, generator):
+def plot_random_generator_images_with_labels(name, generator, idx_to_label_map):
     generator.reset()
     X, y = generator.next()
-    decode_index = {b: a for a, b in generator.class_indices.items()}
     fig = plt.figure(figsize=(12,8))
-    N = 12 # number of images
+    N = min(len(X),12) # number of images
     random_ints = get_unique_random_ints(0,len(X),N)
     for n in range(N):
-        i = random_ints[n]
+        i = random_ints[n] # random i'th image in X
         plt.subplot(3,4,n+1)
-        plt.imshow(X[i])   
+        plt.imshow(X[i,:,:,:])   
         plt.axis('off')
-        index = np.argmax(y[i])
-        plt.title(f"{name}[{i}]: {decode_index[index]}")
-    print(f"Showing {name} images and labels")
+        index = y[i]
+        plt.title(f"{name}[{i}]: {idx_to_label_map[index]}")
+    print(f"Showing {N} {name} images and labels")
     wait_for_click()
 
 def plot_random_generator_images_no_labels(name, generator):
     X = next(generator)
     X = X[1:]  # strip off batch dimension
-    N = 12 # number of images
+    N = min(len(X),12) # number of images
     fig = plt.figure(figsize=(12,8))
     random_ints = get_unique_random_ints(0,len(X),N)
     for n in range(N):
@@ -57,7 +57,7 @@ def plot_random_generator_images_no_labels(name, generator):
     wait_for_click()
 
 def plot_random_imagefiles_with_labels(name, image_files, labels):
-    N = 12 # number of images
+    N = min(len(X),12) # number of images
     fig = plt.figure(figsize=(12,8))
     random_ints = get_unique_random_ints(0,len(image_files)+1,N)
     for n in range(N):
@@ -89,7 +89,7 @@ def plot_confusion_matrix(labels, y_pred, y_test):
     plt.show()
     wait_for_click()
 
-def plot_histogram(title: str='Title', data: List[float]=[], shape: float=1, scale: float=1, with_normal: bool=True):
+def plot_histogram(title: str='Title', data: List[float]=[], with_normal: bool=True):
     import matplotlib.pyplot as plt
 
     plt.hist(data, 50, density=True)
@@ -113,37 +113,32 @@ def plot_histogram(title: str='Title', data: List[float]=[], shape: float=1, sca
 # TESTS
 #==============================================
 
-def test_N_lists_of_unique_random_ints():
-    data = list()
-    N = 100
-    for i in range(N):
-        check = test_get_list_of_unique_random_ints()
-        data.extend(check)
-    plot_histogram(title="uniform random ints", data=data, shape=1., scale=1.)
-        
-def test_get_list_of_unique_random_ints():
+def test_plot_gamma_histogram():
+    shape = 1.5
+    N = 100_000
+    s = np.random.standard_gamma(shape, N)
+    assert len(s) == N
+    plot_histogram(title="gamma distribution", data=s )
+
+def test_plot_rand_int_histogram():
+    s = []
     minVal = 0
     maxVal = 100
-    N = 10
-    x_list = get_unique_random_ints(minVal, maxVal, N)
-    assert len(x_list) == N
-    assert min(x_list) >= minVal
-    assert max(x_list) < maxVal
-    check = [x_list[i] for i in range(N)]
-    # print(check)
-    return check
-
-def test_plot_gamma_histogram():
-    shape, scale = 2., 1. # mean and width
-    s = np.random.standard_gamma(shape, 1000000)
-    plot_histogram(title="gamma distribution", data=s, shape=2., scale=1. )
-
+    N = 100_000
+    for i in range(N):
+        s.append(np.random.randint(minVal,maxVal))
+    assert len(s) == N
+    assert np.min(s) >= minVal
+    maxS = np.max(s)
+    if not maxS < maxVal:
+        print(f"ERROR: maxS:{maxS} not < maxVal:{maxVal}")
+    plot_histogram(title="randint distribution", data=s )
 
 #==============================================
 # MAIN
 #==============================================
 
 if __name__ == "__main__":
-    test_N_lists_of_unique_random_ints()
     test_plot_gamma_histogram()
+    test_plot_rand_int_histogram()
     print("done")

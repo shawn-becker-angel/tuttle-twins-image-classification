@@ -50,7 +50,7 @@ with tf.device('/GPU'):
     print("b:", b)
 
 CSV_DATA_FILE = "../csv-data/S01E01-S01E02-data.csv"
-IMAGE_SOURCE_DIRECTORY = "../src-images/"
+SRC_IMGS_DIR = "../all-src-images"
 
 # file size
 FILE_IMAGE_HEIGHT = 288
@@ -64,7 +64,7 @@ IMAGE_WIDTH = int(round(FILE_IMAGE_WIDTH / 2))
 # has 55352 rows for all tuttle_twins frames from S01E01 to S01E02
 # and has already undergone 10 iterations of shuffling/resampling
 
-data_df = pd.read_csv(CSV_DATA_FILE,header=None, names=['filename','label'])
+data_df = pd.read_csv(CSV_DATA_FILE,header=None, dtype=str, names=['filename','label'])
 
 # counts of each label
 y_counts = data_df['label'].value_counts()
@@ -94,16 +94,16 @@ assert len(data_df) == N
 X_data = data_df['filename'].to_list()
 y_data = data_df['label'].to_list()
 
-label_map_int = { 'Junk':0, 'Common':1, 'Uncommon':2, 'Rare':3, 'Legendary':4 }
-int_map_label = { value: key for key,value in label_map_int.items()}
-NUM_CLASSES = len(label_map_int)
+label_to_idx_map = { 'Junk':0, 'Common':1, 'Uncommon':2, 'Rare':3, 'Legendary':4 }
+idx_to_label_map = { value: key for key,value in label_to_idx_map.items()}
+NUM_CLASSES = len(label_to_idx_map)
 assert NUM_CLASSES == 5
 
 # do our own label-to-int categorization on the incoming labels
-y_data = [label_map_int[label] for label in y_data]
+y_data = [label_to_idx_map[label] for label in y_data]
 
 # used as class_weights in model.fit(training)
-label_weights = {i:label_weights[int_map_label[i]] for i in int_map_label.keys()}
+label_weights = {i:label_weights[idx_to_label_map[i]] for i in idx_to_label_map.keys()}
 
 # validation and test data are shuffled only at start
 # training set is shuffled on each epocn
@@ -149,7 +149,7 @@ datagen = ImageDataGenerator(rescale=1./255)
 
 train_generator = datagen.flow_from_dataframe(
     dataframe=train_df,
-    directory="../src-images/",
+    directory=SRC_IMGS_DIR,
     x_col="filename",
     y_col="label",
     subset=None,
@@ -158,18 +158,18 @@ train_generator = datagen.flow_from_dataframe(
     shuffle=False,
     drop_duplicates=False, # not needed
     validate_filenames=False, # not needed
-    class_mode="raw", # even though we've done our own categorization?
+    class_mode="sparse", # even though we've done our own categorization?
     interpolation="box",  # prevents antialiasing if subsampling
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
 
-plot_random_generator_images_with_labels("train", train_generator)
+plot_random_generator_images_with_labels("train", train_generator, idx_to_label_map)
 
 #------------------------------------
 # Valid
 
 valid_generator = datagen.flow_from_dataframe(
     dataframe=valid_df,
-    directory="../src-images/",
+    directory=SRC_IMGS_DIR,
     x_col="filename",
     y_col="label",
     subset=None,
@@ -180,11 +180,11 @@ valid_generator = datagen.flow_from_dataframe(
     class_weight=label_weights,
     drop_duplicates=False, # not needed
     validate_filenames=False, # not needed
-    class_mode=None,
+    class_mode="sparse",
     interpolation="box",
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
 
-plot_random_generator_images_with_labels("valid", valid_generator)
+plot_random_generator_images_with_labels("valid", valid_generator, idx_to_label_map)
 
 #------------------------------------
 # Test
@@ -194,7 +194,7 @@ test_datagen = ImageDataGenerator(rescale=1./255.)
 # image filenames only
 test_generator = test_datagen.flow_from_dataframe(
     dataframe=test_df,
-    directory="../src-images/",
+    directory=SRC_IMGS_DIR,
     x_col="filename",
     y_col=None, # images only
     batch_size=BATCH_SIZE,
@@ -209,7 +209,7 @@ test_generator = test_datagen.flow_from_dataframe(
 # image filenames with labels
 true_test_generator = test_datagen.flow_from_dataframe(
     dataframe=test_df,
-    directory="../src-images/",
+    directory=SRC_IMGS_DIR,
     x_col="filename",
     y_col="label",
     batch_size=BATCH_SIZE,
@@ -217,14 +217,14 @@ true_test_generator = test_datagen.flow_from_dataframe(
     shuffle=False, # not needed for testing
     drop_duplicates=False, # not needed
     validate_filenames=False, # not needed
-    class_mode=None, # images only
+    class_mode="sparse",
     interpolation="box",
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
 
 assert true_test_generator.filenames == test_generator.filenames
 
 plot_random_generator_images_no_labels("test", test_generator)
-plot_random_generator_images_with_labels("true_test", true_test_generator)
+plot_random_generator_images_with_labels("true_test", true_test_generator, idx_to_label_map)
 
 # We need to shuffle the training data for each epoch
 # https://datascience.stackexchange.com/a/24524
