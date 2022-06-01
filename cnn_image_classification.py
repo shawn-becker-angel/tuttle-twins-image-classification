@@ -31,14 +31,15 @@ from keras.layers import Conv2D, MaxPooling2D
 from keras import regularizers, optimizers
 
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
-from sklearn.model_selection import ShuffleSplit
 
+from matplotlib import pyplot as plt
 from matplotlib_utils import \
     plot_random_generator_images_with_labels, \
     plot_random_imagefiles_with_labels, \
     plot_random_generator_images_no_labels
     
 from history_utils import plot_history, save_history
+from shuffle_utils import triple_shuffle_split
 
 # verify availability of GPU
 tf.config.list_physical_devices()
@@ -47,12 +48,6 @@ with tf.device('/GPU'):
     b = tf.nn.relu(a)
     print("a:", a)
     print("b:", b)
-
-
-# batch_size must evenly divide the length of the dataset exactly
-# because for the test set, you should sample the images exactly once
-BATCH_SIZE = 32
-EPOCHS = 50
 
 CSV_DATA_FILE = "../csv-data/S01E01-S01E02-data.csv"
 IMAGE_SOURCE_DIRECTORY = "../src-images/"
@@ -64,75 +59,86 @@ FILE_IMAGE_WIDTH = 512
 IMAGE_HEIGHT = FILE_IMAGE_HEIGHT / 2
 IMAGE_WIDTH = FILE_IMAGE_WIDTH / 2
 
-# the number of samples used, N, must be 
-# divisible by 32, the test batch_size, it must also be
-# divisible  by 4, the validation split (but 32 is already a multiple of 4)\
-N = 1024
-assert (N // BATCH_SIZE) * BATCH_SIZE == N
-
 # read CSV_DATA_FILE, which 
 # has 55352 rows for all tuttle_twins frames from S01E01 to S01E02
 # and has already undergone 10 iterations of shuffling/resampling
 
 data_df = pd.read_csv(CSV_DATA_FILE,header=None, names=['filename','label'])
 
+# counts of each label
+y_counts = data_df['label'].value_counts()
+label_weights = max(y_counts)/y_counts
+
 # keep only 1 out of 24 frames
 data_df = data_df.iloc[::24, :]
 
+# batch_size must evenly divide the length of the dataset exactly
+# because for the test set, you should sample the images exactly once
+BATCH_SIZE = 32
+EPOCHS = 50
+
+# the number of samples used, N, must be 
+# divisible by 32, the test batch_size, it must also be
+# divisible  by 4, the validation split (but 32 is already a multiple of 4)\
+N = len(data_df)
+N = (N // BATCH_SIZE) * BATCH_SIZE
+
+# truncate total data_df rows to to N
+data_df = data_df.iloc[:N,:]
+assert len(data_df) == N
+
 #------------------------------------
-# Split the dataset
+# Split the dataset into X_data and y_data
 
 X_data = data_df['filename'].to_list()
-y_data = data_df['label'].to_list();
+y_data = data_df['label'].to_list()
 
-# # do our own label-to-int categorization on the incoming labels
-label_map = { 'Junk':0, 'Common':1, 'Uncommon':2, 'Rare':3, 'Legendary':4 }
-y_data = [label_map[label] for label in y_data]
+label_map_int = { 'Junk':0, 'Common':1, 'Uncommon':2, 'Rare':3, 'Legendary':4 }
+int_map_label = { value: key for key,value in label_map_int.items()}
+NUM_CLASSES = len(label_map_int)
+assert NUM_CLASSES == 5
+
+# do our own label-to-int categorization on the incoming labels
+y_data = [label_map_int[label] for label in y_data]
+
+# used as class_weights in model.fit(training)
+label_weights = {i:label_weights[int_map_label[i]] for i in int_map_label.keys()}
 
 # validation and test data are shuffled only at start
 # training set is shuffled on each epocn
 
 # define data splits
-train_perc = 0.70
-valid_perc = 0.20
-test_perc = 1.0
+train_size = 0.70
+valid_size = 0.20
+test_size =  0.10
 
-# shuffle and split data into train and other
-# shuffle and split other into valid and test
+# create indices with percentages over N
+train_idx, valid_idx, test_idx = triple_shuffle_split(
+    data_size=N, 
+    train_size=train_size, 
+    valid_size=valid_size, 
+    test_size=test_size, 
+    random_state=123)
 
+# prepare for indexing
+X_data = np.array(X_data)
+y_data = np.array(y_data)
 
-rs1 = ShuffleSplit(n_splits=1, train_size=0.9, test_size=0.1, random_state=123) 
+# apply indices and name each series
+X_train = pd.Series(X_data[train_idx], name='filename')
+y_train = pd.Series(y_data[train_idx], name='label', dtype='uint8')
 
-data_idx = range(0,len(X_data))
-for a, b in rs1.split(data_idx):
-    train_idx.append(a)
-    test_idx.append(b)
+X_valid = pd.Series(X_data[valid_idx], name='filename')
+y_valid = pd.Series(y_data[valid_idx], name='label', dtype='uint8')
 
-# split train into .7 train and .3 valid
-rs2 = ShuffleSplit(n_splits=1, train_size=0.7, test_size=0.3, random_state=456) 
-train_train_idx = []
-train_valid_idx = []
-for c, d in rs2.split(train_idx):
-    train_train_idx.append(c)
-    train_valid_idx.append(d)
+X_test = pd.Series(X_data[test_idx], name='filename')
+y_test = pd.Series(y_data[test_idx], name='label', dtype='uint8')
 
-print(f"train_idx:{train_train_idx}")
-print(f"valid_idx:{train_valid_idx}")
-print(f"test_idx:{test_idx}")
-
-
-
-X_train = X_train[train_train_indices]
-y_train = y_train[train_train_indices]
-X_valid = X_train[train_valid_indicies]
-y_valid = y_train[train_valid_indicies]
-
-# yields .9x.7 train + .9x.3 valid + 0.1 test = 1.0 data
-
-# concat X and y arrays horizontally to create dataframes
-train_df = pd.concat([X_train,y_train], axis=1)
+# concat X and y series horizontally to create dataframes
+train_df = pd.concat([X_train, y_train], axis=1)
 valid_df = pd.concat([X_valid,y_valid], axis=1)
 test_df = pd.concat([X_test,y_test], axis=1)
+
 assert len(train_df) + len(valid_df) + len(test_df) == N
 
 #------------------------------------
@@ -155,31 +161,27 @@ train_generator = datagen.flow_from_dataframe(
     interpolation="box",  # prevents antialiasing if subsampling
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
 
-# print("train_generator class_names:", train_generator.class_names)
-CLASSES = list(train_generator.class_indices.keys())
-NUM_CLASSES = len(CLASSES)
-
 plot_random_generator_images_with_labels("train", train_generator)
 
 #------------------------------------
-# Validation
+# Valid
 
 valid_generator = datagen.flow_from_dataframe(
-    dataframe=train_df,
+    dataframe=valid_df,
     directory="../src-images/",
     x_col="filename",
     y_col="label",
-    subset="validation",
+    subset=None,
     batch_size=BATCH_SIZE, 
     seed=42,
-    shuffle=True,
+    shuffle=False,
+    steps_per_epoch=None, # no shuffle if not None
+    class_weight=label_weights,
     drop_duplicates=False, # not needed
     validate_filenames=False, # not needed
-    class_mode="categorical",
+    class_mode=None,
     interpolation="box",
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
-
-assert (len(valid_generator.filenames) + len(train_generator.filenames)) == len(train_df)
 
 plot_random_generator_images_with_labels("valid", valid_generator)
 
@@ -188,6 +190,7 @@ plot_random_generator_images_with_labels("valid", valid_generator)
 
 test_datagen = ImageDataGenerator(rescale=1./255.)
 
+# image filenames only
 test_generator = test_datagen.flow_from_dataframe(
     dataframe=test_df,
     directory="../src-images/",
@@ -202,6 +205,7 @@ test_generator = test_datagen.flow_from_dataframe(
     interpolation="box",
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
 
+# image filenames with labels
 true_test_generator = test_datagen.flow_from_dataframe(
     dataframe=test_df,
     directory="../src-images/",
@@ -212,7 +216,7 @@ true_test_generator = test_datagen.flow_from_dataframe(
     shuffle=False, # not needed for testing
     drop_duplicates=False, # not needed
     validate_filenames=False, # not needed
-    class_mode="categorical", # images only
+    class_mode=None, # images only
     interpolation="box",
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
 
@@ -258,9 +262,11 @@ STEP_SIZE_VALID=valid_generator.n//valid_generator.batch_size
 # update the model so that model(train) gradually matches model(valid)
 train_valid_history = model.fit_generator(
     generator=train_generator,
-    steps_per_epoch=STEP_SIZE_TRAIN,
+    shuffle=True, # shuffle before each epoch
+    steps_per_epoch=None, # no shuffle if not None
     validation_data=valid_generator,
     validation_steps=STEP_SIZE_VALID,
+    class_weight=label_weights,
     epochs=EPOCHS)
 
 score = model.evaluate_generator(valid_generator)
@@ -304,8 +310,6 @@ assert len(x_test_true) == len(y_test_true)
 filenames = test_generator.filenames
 num_images = len(filenames)
 assert len(y_test_pred) == num_images
-
-# assert len(y_test_true) == num_images
 
 # Plot image_files with pred/true_test classes (aka labels) 
 pred_v_true_labels = [ f"{y_test_pred[i]}[{i}]/{y_test_true[i]}[{i}]" for i in range(num_images) ]
