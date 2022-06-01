@@ -26,7 +26,8 @@ def get_unique_random_ints(minVal: int, maxVal: int, N: int):
     raise Exception(f"ERROR: can't find {N} unique ints in {N*2} attempts")
 
 def plot_random_generator_images_with_labels(name, generator):
-    X, y = next(generator)
+    generator.reset()
+    X, y = generator.next()
     decode_index = {b: a for a, b in generator.class_indices.items()}
     fig = plt.figure(figsize=(12,8))
     N = 12 # number of images

@@ -44,7 +44,7 @@ from shuffle_utils import triple_shuffle_split
 # verify availability of GPU
 tf.config.list_physical_devices()
 with tf.device('/GPU'):
-    a = tf.random.normal(shape=(2,), dtype=tf.float32)
+    a = tf.random.normal(shape=(2,), dtype=tf.float64)
     b = tf.nn.relu(a)
     print("a:", a)
     print("b:", b)
@@ -52,12 +52,13 @@ with tf.device('/GPU'):
 CSV_DATA_FILE = "../csv-data/S01E01-S01E02-data.csv"
 IMAGE_SOURCE_DIRECTORY = "../src-images/"
 
-# Constants
+# file size
 FILE_IMAGE_HEIGHT = 288
 FILE_IMAGE_WIDTH = 512
 
-IMAGE_HEIGHT = FILE_IMAGE_HEIGHT / 2
-IMAGE_WIDTH = FILE_IMAGE_WIDTH / 2
+# target image size
+IMAGE_HEIGHT = int(round(FILE_IMAGE_HEIGHT / 2))
+IMAGE_WIDTH = int(round(FILE_IMAGE_WIDTH / 2))
 
 # read CSV_DATA_FILE, which 
 # has 55352 rows for all tuttle_twins frames from S01E01 to S01E02
@@ -126,13 +127,13 @@ y_data = np.array(y_data)
 
 # apply indices and name each series
 X_train = pd.Series(X_data[train_idx], name='filename')
-y_train = pd.Series(y_data[train_idx], name='label', dtype='uint8')
+y_train = pd.Series(y_data[train_idx], name='label', dtype='float64')
 
 X_valid = pd.Series(X_data[valid_idx], name='filename')
-y_valid = pd.Series(y_data[valid_idx], name='label', dtype='uint8')
+y_valid = pd.Series(y_data[valid_idx], name='label', dtype='float64')
 
 X_test = pd.Series(X_data[test_idx], name='filename')
-y_test = pd.Series(y_data[test_idx], name='label', dtype='uint8')
+y_test = pd.Series(y_data[test_idx], name='label', dtype='float64')
 
 # concat X and y series horizontally to create dataframes
 train_df = pd.concat([X_train, y_train], axis=1)
@@ -157,7 +158,7 @@ train_generator = datagen.flow_from_dataframe(
     shuffle=False,
     drop_duplicates=False, # not needed
     validate_filenames=False, # not needed
-    class_mode=None, # we did our own categorization
+    class_mode="raw", # even though we've done our own categorization?
     interpolation="box",  # prevents antialiasing if subsampling
     target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
 
