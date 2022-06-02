@@ -20,6 +20,7 @@
 import pandas as pd
 import numpy as np
 import os
+import datetime
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import tensorflow as tf
@@ -57,7 +58,8 @@ def create_generators(
     data_splits=None,
     frame_subsample_rate=None,
     batch_size=None,
-    target_size=None):
+    target_size=None,
+    plot_random_images=True):
 
     # read CSV_DATA_FILE, which 
     # has 55352 rows for all tuttle_twins frames from S01E01 to S01E02
@@ -149,10 +151,11 @@ def create_generators(
         interpolation="box",  # prevents antialiasing if subsampling
         target_size=target_size)
 
-    train_plot_idx = generate_random_plot_idx(train_generator)
-    plot_idxed_generator_images(
-        name="train", generator=train_generator, 
-        plot_idx=train_plot_idx, idx_to_label_map=idx_to_label_map)
+    if plot_random_images:
+        train_plot_idx = generate_random_plot_idx(train_generator)
+        plot_idxed_generator_images(
+            name="train", generator=train_generator, 
+            plot_idx=train_plot_idx, idx_to_label_map=idx_to_label_map)
 
     #------------------------------------
     # Valid
@@ -173,10 +176,11 @@ def create_generators(
         interpolation="box",
         target_size=target_size)
 
-    valid_plot_idx = generate_random_plot_idx(valid_generator)
-    plot_idxed_generator_images(
-        "valid", valid_generator, 
-        valid_plot_idx, idx_to_label_map)
+    if plot_random_images:
+        valid_plot_idx = generate_random_plot_idx(valid_generator)
+        plot_idxed_generator_images(
+            "valid", valid_generator, 
+            valid_plot_idx, idx_to_label_map)
 
     #------------------------------------
     # Test
@@ -199,9 +203,11 @@ def create_generators(
         target_size=target_size)
 
     test_plot_idx = generate_random_plot_idx(test_generator)
-    plot_idxed_generator_images(
-        "test", test_generator, 
-        test_plot_idx)
+
+    if plot_random_images:
+        plot_idxed_generator_images(
+            "test", test_generator, 
+            test_plot_idx)
 
     # image filenames with labels
     true_test_generator = test_datagen.flow_from_dataframe(
@@ -220,9 +226,10 @@ def create_generators(
 
     assert true_test_generator.filenames == test_generator.filenames
 
-    plot_idxed_generator_images(
-        "true_test", true_test_generator, 
-        test_plot_idx, idx_to_label_map)
+    if plot_random_images:
+        plot_idxed_generator_images(
+            "true_test", true_test_generator, 
+            test_plot_idx, idx_to_label_map)
 
     generators = (train_generator, valid_generator, test_generator, true_test_generator)
     return  (generators, label_weights_by_idx)
@@ -273,6 +280,8 @@ def create_model(
         optimizer,
         loss="sparse_categorical_crossentropy", 
         metrics=["accuracy"])
+    
+    return model
 
 
 def fit_model(
@@ -281,13 +290,19 @@ def fit_model(
     valid_generator=None,
     class_weights_by_idx=None,
     epochs=None):
+    
+    assert model is not None
+    assert train_generator is not None
+    assert valid_generator is not None
+    assert class_weights_by_idx is not None
+    assert epochs is not None
 
     step_size_train=train_generator.n//train_generator.batch_size
     step_size_valid=valid_generator.n//valid_generator.batch_size
 
     # update the model so that model(train) gradually matches model(valid)
-    train_valid_history = model.fit_generator(
-        generator=train_generator,
+    model.fit(
+        train_generator,
         shuffle=True, # shuffle before each epoch
         steps_per_epoch=None, # no shuffle if not None
         validation_data=valid_generator,
@@ -404,6 +419,8 @@ def main():
     EPOCHS = 50
     DATA_SPLITS = {'train_size':0.70, 'valid_size':0.20, 'test_size':0.10}
     LEARNING_RATE = 0.0001
+    
+    PLOT_RANDOM_IMAGES = False
 
     (generators, label_weights_by_idx) = create_generators(
         csv_data_file=CSV_DATA_FILE, 
@@ -413,7 +430,8 @@ def main():
         data_splits = DATA_SPLITS,
         frame_subsample_rate=FRAME_SUBSAMPLE_RATE,
         batch_size=BATCH_SIZE,
-        target_size=TARGET_SIZE)
+        target_size=TARGET_SIZE,
+        plot_random_images=PLOT_RANDOM_IMAGES)
 
     (train_generator, valid_generator, test_generator, true_test_generator) = generators
 
