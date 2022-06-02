@@ -34,9 +34,9 @@ from sklearn.metrics import classification_report, confusion_matrix, ConfusionMa
 
 from matplotlib import pyplot as plt
 from matplotlib_utils import \
-    plot_random_generator_images_with_labels, \
-    plot_random_imagefiles_with_labels, \
-    plot_random_generator_images_no_labels
+    plot_idxed_generator_images, \
+    plot_idxed_image_files_with_labels, \
+    generate_random_idx
     
 from history_utils import plot_history, save_history
 from shuffle_utils import triple_shuffle_split
@@ -49,287 +49,395 @@ with tf.device('/GPU'):
     print("a:", a)
     print("b:", b)
 
-CSV_DATA_FILE = "../csv-data/S01E01-S01E02-data.csv"
-SRC_IMGS_DIR = "../all-src-images"
 
-# file size
-FILE_IMAGE_HEIGHT = 288
-FILE_IMAGE_WIDTH = 512
+def create_generators(
+    csv_data_file=None, 
+    src_imgs_dir=None,
+    label_to_idx_map=None,
+    idx_to_label_map=None,
+    data_splits=None,
+    frame_subsample_rate=None,
+    batch_size=None,
+    target_size=None):
 
-# target image size
-IMAGE_HEIGHT = int(round(FILE_IMAGE_HEIGHT / 2))
-IMAGE_WIDTH = int(round(FILE_IMAGE_WIDTH / 2))
+    # read CSV_DATA_FILE, which 
+    # has 55352 rows for all tuttle_twins frames from S01E01 to S01E02
+    # and has already undergone 10 iterations of shuffling/resampling
 
-# read CSV_DATA_FILE, which 
-# has 55352 rows for all tuttle_twins frames from S01E01 to S01E02
-# and has already undergone 10 iterations of shuffling/resampling
+    data_df = pd.read_csv(csv_data_file, header=None, dtype=str, names=['filename','label'])
 
-data_df = pd.read_csv(CSV_DATA_FILE,header=None, dtype=str, names=['filename','label'])
+    # counts of each label before frame_subsampling
+    y_counts = data_df['label'].value_counts()
+    total_label_weights_by_label = max(y_counts)/y_counts
 
-# counts of each label
-y_counts = data_df['label'].value_counts()
-label_weights = max(y_counts)/y_counts
+    # keep only 1 out of frame_subsample_rate frames
+    if frame_subsample_rate > 1:
+        data_df = data_df.iloc[::frame_subsample_rate, :]
 
-# keep only 1 out of 24 frames
-data_df = data_df.iloc[::24, :]
+    # the number of samples used, N, must be 
+    # divisible by the test batch_size and by the validation split
+    N = len(data_df)
+    N = (N // batch_size) * batch_size
 
-# batch_size must evenly divide the length of the dataset exactly
-# because for the test set, you should sample the images exactly once
-BATCH_SIZE = 32
-EPOCHS = 50
+    # truncate total data_df rows to to N
+    data_df = data_df.iloc[:N,:]
+    assert len(data_df) == N
 
-# the number of samples used, N, must be 
-# divisible by 32, the test batch_size, it must also be
-# divisible  by 4, the validation split (but 32 is already a multiple of 4)\
-N = len(data_df)
-N = (N // BATCH_SIZE) * BATCH_SIZE
+    #------------------------------------
+    # Split the dataset into X_data and y_data
 
-# truncate total data_df rows to to N
-data_df = data_df.iloc[:N,:]
-assert len(data_df) == N
+    X_data = data_df['filename'].to_list()
+    y_data = data_df['label'].to_list()
 
-#------------------------------------
-# Split the dataset into X_data and y_data
+    # do our own label-to-int categorization on the incoming labels
+    # so we can use 
+    # class_mode 'raw'  and 
+    # loss function 'sparse_categorical_crossentropy'
+    y_data = [label_to_idx_map[label] for label in y_data]
 
-X_data = data_df['filename'].to_list()
-y_data = data_df['label'].to_list()
+    # used as class_weights in model.fit(training)
+    # convert label_weights by index to label_weights by label
+    label_weights_by_idx = {i:total_label_weights_by_label[label_to_idx_map[i]] for i in label_to_idx_map.keys()}
 
-label_to_idx_map = { 'Junk':0, 'Common':1, 'Uncommon':2, 'Rare':3, 'Legendary':4 }
-idx_to_label_map = { value: key for key,value in label_to_idx_map.items()}
-NUM_CLASSES = len(label_to_idx_map)
-assert NUM_CLASSES == 5
+    # validation and test data are shuffled only at start
+    # training set is shuffled on each epocn
 
-# do our own label-to-int categorization on the incoming labels
-y_data = [label_to_idx_map[label] for label in y_data]
+    # create indices with percentages over N
+    train_idx, valid_idx, test_idx = triple_shuffle_split(
+        data_size=N,
+        data_splits=data_splits, 
+        random_state=123)
 
-# used as class_weights in model.fit(training)
-label_weights = {i:label_weights[idx_to_label_map[i]] for i in idx_to_label_map.keys()}
+    # prepare for indexing
+    X_data = np.array(X_data)
+    y_data = np.array(y_data)
 
-# validation and test data are shuffled only at start
-# training set is shuffled on each epocn
+    # apply indices and name each series
+    X_train = pd.Series(X_data[train_idx], name='filename')
+    y_train = pd.Series(y_data[train_idx], name='label', dtype='float64')
 
-# define data splits
-train_size = 0.70
-valid_size = 0.20
-test_size =  0.10
+    X_valid = pd.Series(X_data[valid_idx], name='filename')
+    y_valid = pd.Series(y_data[valid_idx], name='label', dtype='float64')
 
-# create indices with percentages over N
-train_idx, valid_idx, test_idx = triple_shuffle_split(
-    data_size=N, 
-    train_size=train_size, 
-    valid_size=valid_size, 
-    test_size=test_size, 
-    random_state=123)
+    X_test = pd.Series(X_data[test_idx], name='filename')
+    y_test = pd.Series(y_data[test_idx], name='label', dtype='float64')
 
-# prepare for indexing
-X_data = np.array(X_data)
-y_data = np.array(y_data)
+    # concat X and y series horizontally to create dataframes
+    train_df = pd.concat([X_train, y_train], axis=1)
+    valid_df = pd.concat([X_valid,y_valid], axis=1)
+    test_df = pd.concat([X_test,y_test], axis=1)
 
-# apply indices and name each series
-X_train = pd.Series(X_data[train_idx], name='filename')
-y_train = pd.Series(y_data[train_idx], name='label', dtype='float64')
+    assert len(train_df) + len(valid_df) + len(test_df) == N
 
-X_valid = pd.Series(X_data[valid_idx], name='filename')
-y_valid = pd.Series(y_data[valid_idx], name='label', dtype='float64')
+    #------------------------------------
+    # Train
 
-X_test = pd.Series(X_data[test_idx], name='filename')
-y_test = pd.Series(y_data[test_idx], name='label', dtype='float64')
+    datagen = ImageDataGenerator(rescale=1./255)
 
-# concat X and y series horizontally to create dataframes
-train_df = pd.concat([X_train, y_train], axis=1)
-valid_df = pd.concat([X_valid,y_valid], axis=1)
-test_df = pd.concat([X_test,y_test], axis=1)
+    train_generator = datagen.flow_from_dataframe(
+        dataframe=train_df,
+        directory=src_imgs_dir,
+        x_col="filename",
+        y_col="label",
+        subset=None,
+        batch_size=batch_size,
+        seed=42,
+        shuffle=False,
+        drop_duplicates=False, # not needed
+        validate_filenames=False, # not needed
+        class_mode="raw", # even though we've done our own categorization?
+        interpolation="box",  # prevents antialiasing if subsampling
+        target_size=target_size)
 
-assert len(train_df) + len(valid_df) + len(test_df) == N
+    train_idx = generate_random_idx(train_generator)
+    plot_idxed_generator_images(
+        name="train", generator=train_generator, 
+        idx=train_idx, idx_to_label_map=idx_to_label_map)
 
-#------------------------------------
-# Train
+    #------------------------------------
+    # Valid
 
-datagen = ImageDataGenerator(rescale=1./255)
+    valid_generator = datagen.flow_from_dataframe(
+        dataframe=valid_df,
+        directory=src_imgs_dir,
+        x_col="filename",
+        y_col="label",
+        subset=None,
+        batch_size=batch_size, 
+        seed=42,
+        shuffle=False,
+        steps_per_epoch=None, # no shuffle if not None
+        drop_duplicates=False, # not needed
+        validate_filenames=False, # not needed
+        class_mode="raw",
+        interpolation="box",
+        target_size=target_size)
 
-train_generator = datagen.flow_from_dataframe(
-    dataframe=train_df,
-    directory=SRC_IMGS_DIR,
-    x_col="filename",
-    y_col="label",
-    subset=None,
-    batch_size=BATCH_SIZE,
-    seed=42,
-    shuffle=False,
-    drop_duplicates=False, # not needed
-    validate_filenames=False, # not needed
-    class_mode="sparse", # even though we've done our own categorization?
-    interpolation="box",  # prevents antialiasing if subsampling
-    target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
+    valid_idx = generate_random_idx(valid_generator)
+    plot_idxed_generator_images(
+        "valid", valid_generator, 
+        valid_idx, idx_to_label_map)
 
-plot_random_generator_images_with_labels("train", train_generator, idx_to_label_map)
+    #------------------------------------
+    # Test
 
-#------------------------------------
-# Valid
+    test_datagen = ImageDataGenerator(rescale=1./255.)
 
-valid_generator = datagen.flow_from_dataframe(
-    dataframe=valid_df,
-    directory=SRC_IMGS_DIR,
-    x_col="filename",
-    y_col="label",
-    subset=None,
-    batch_size=BATCH_SIZE, 
-    seed=42,
-    shuffle=False,
-    steps_per_epoch=None, # no shuffle if not None
-    class_weight=label_weights,
-    drop_duplicates=False, # not needed
-    validate_filenames=False, # not needed
-    class_mode="sparse",
-    interpolation="box",
-    target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
+    # image filenames no labels
+    test_generator = test_datagen.flow_from_dataframe(
+        dataframe=test_df,
+        directory=src_imgs_dir,
+        x_col="filename",
+        y_col=None, # images only
+        batch_size=batch_size,
+        seed=42,
+        shuffle=False, # not needed for testing
+        drop_duplicates=False, # not needed
+        validate_filenames=False, # not needed
+        class_mode=None, # images only
+        interpolation="box",
+        target_size=target_size)
 
-plot_random_generator_images_with_labels("valid", valid_generator, idx_to_label_map)
+    test_idx = generate_random_idx(test_generator)
+    plot_idxed_generator_images(
+        "test", test_generator, 
+        test_idx)
 
-#------------------------------------
-# Test
+    # image filenames with labels
+    true_test_generator = test_datagen.flow_from_dataframe(
+        dataframe=test_df,
+        directory=src_imgs_dir,
+        x_col="filename",
+        y_col="label",
+        batch_size=batch_size,
+        seed=42,
+        shuffle=False, # not needed for testing
+        drop_duplicates=False, # not needed
+        validate_filenames=False, # not needed
+        class_mode="raw",
+        interpolation="box",
+        target_size=target_size)
 
-test_datagen = ImageDataGenerator(rescale=1./255.)
+    assert true_test_generator.filenames == test_generator.filenames
 
-# image filenames only
-test_generator = test_datagen.flow_from_dataframe(
-    dataframe=test_df,
-    directory=SRC_IMGS_DIR,
-    x_col="filename",
-    y_col=None, # images only
-    batch_size=BATCH_SIZE,
-    seed=42,
-    shuffle=False, # not needed for testing
-    drop_duplicates=False, # not needed
-    validate_filenames=False, # not needed
-    class_mode=None, # images only
-    interpolation="box",
-    target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
+    plot_idxed_generator_images(
+        "true_test", true_test_generator, 
+        test_idx, idx_to_label_map)
 
-# image filenames with labels
-true_test_generator = test_datagen.flow_from_dataframe(
-    dataframe=test_df,
-    directory=SRC_IMGS_DIR,
-    x_col="filename",
-    y_col="label",
-    batch_size=BATCH_SIZE,
-    seed=42,
-    shuffle=False, # not needed for testing
-    drop_duplicates=False, # not needed
-    validate_filenames=False, # not needed
-    class_mode="sparse",
-    interpolation="box",
-    target_size=(IMAGE_HEIGHT,IMAGE_WIDTH))
-
-assert true_test_generator.filenames == test_generator.filenames
-
-plot_random_generator_images_no_labels("test", test_generator)
-plot_random_generator_images_with_labels("true_test", true_test_generator, idx_to_label_map)
-
-# We need to shuffle the training data for each epoch
-# https://datascience.stackexchange.com/a/24524
-
-model = Sequential()
-
-model.add(Conv2D(32, (3, 3), padding='same',
-                 input_shape=(IMAGE_HEIGHT,IMAGE_WIDTH,3)))
-model.add(Activation('relu'))
-model.add(Conv2D(32, (3, 3)))
-model.add(Activation('relu'))
-model.add(MaxPooling2D(pool_size=(2, 2)))
-model.add(Dropout(0.25))
-
-model.add(Conv2D(64, (3, 3), padding='same'))
-model.add(Activation('relu'))
-model.add(Conv2D(64, (3, 3)))
-model.add(Activation('relu'))
-model.add(MaxPooling2D(pool_size=(2, 2)))
-model.add(Dropout(0.25))
-
-model.add(Flatten())
-model.add(Dense(512))
-model.add(Activation('relu'))
-model.add(Dropout(0.5))
-model.add(Dense(NUM_CLASSES, activation='softmax'))
-
-model.compile(
-    optimizers.RMSprop(learning_rate=0.0001),
-    loss="categorical_crossentropy", 
-    metrics=["accuracy"])
-
-STEP_SIZE_TRAIN=train_generator.n//train_generator.batch_size
-STEP_SIZE_VALID=valid_generator.n//valid_generator.batch_size
-
-# update the model so that model(train) gradually matches model(valid)
-train_valid_history = model.fit_generator(
-    generator=train_generator,
-    shuffle=True, # shuffle before each epoch
-    steps_per_epoch=None, # no shuffle if not None
-    validation_data=valid_generator,
-    validation_steps=STEP_SIZE_VALID,
-    class_weight=label_weights,
-    epochs=EPOCHS)
-
-score = model.evaluate_generator(valid_generator)
-print('Test loss:', score[0])
-print('Test accuracy:', score[1])
-
-# save_history(filename="train-valid-history", history=train_valid_history)
-# plot_history(name="train-valid-history", history=train_valid_history)
-
-# Confusion Matrix and Classification Report
-Y_valid_pred = model.predict_generator(valid_generator)
-y_valid_pred = np.argmax(Y_valid_pred, axis=1)
-
-print('Confusion Matrix')
-print(confusion_matrix(valid_generator.classes, y_valid_pred))
-
-print('Classification Report')
-index_to_class = {value:key for key, value in valid_generator.class_indices.items()}
-target_names = [index_to_class[idx] for idx in np.unique(y_valid_pred)]
-
-assert len(y_valid_pred) == len(valid_generator.classes)
-
-pred_classes_set = set(y_valid_pred)
-valid_classes_set = set(valid_generator.classes)
-if pred_classes_set != valid_classes_set:
-    print(f"INFO: pred classes: {pred_classes_set} != valid_classes_set: {valid_classes_set}")
-
-# use the model to get class predictions for each image in the test dataset
-Y_test_pred = model.predict_generator(test_generator) # each image has NUM_CLASSES [0..1] prediction probabilities
-y_test_pred = np.argmax(Y_test_pred, axis=1) # each image has a class index with the highest prediction probability
-assert len(Y_test_pred) == len(y_test_pred)
-
-# get the actual Images (x_test_true) and actual classes (y_test_true) from the test dataset
-x_test_true, y_test_true = next(true_test_generator)
-assert len(x_test_true) == len(y_test_true)
-
-# assert len(test_generator.filenames) == len(x_test_true)
-# assert set(test_generator.filenames) == set(x_test_true)
-# assert test_generator.filenames == x_test_true
-
-filenames = test_generator.filenames
-num_images = len(filenames)
-assert len(y_test_pred) == num_images
-
-# Plot image_files with pred/true_test classes (aka labels) 
-pred_v_true_labels = [ f"{y_test_pred[i]}[{i}]/{y_test_true[i]}[{i}]" for i in range(num_images) ]
-pred_v_true_filenames = x_test_true
-plot_random_imagefiles_with_labels("test dataset pred vs true classes", pred_v_true_filenames, pred_v_true_labels)
-
-# Plot the confusion matrix  of pred vs true
-pred_true_display_labels = test_generator.class_indices.keys()
-cm = confusion_matrix(y_test_pred, y_test_true)
-disp = ConfusionMatrixDisplay(
-    confusion_matrix=cm, 
-    display_labels=pred_true_display_labels)
-disp.plot(cmap=plt.cm.Blues)
-print(f"Showing pred vs true labels")
-print(f"Click key or mouse in window to close.")
-plt.waitforbuttonpress()
-plt.close("all")
-plt.show(block=False)
-
-print("done")
+    generators = (train_generator, valid_generator, test_generator, true_test_generator)
+    return  generators, label_weights_by_idx
 
 
+def create_model(
+    target_size=None,
+    learning_rate=None, 
+    labels=None): 
+
+    # https://datascience.stackexchange.com/a/24524
+
+    model = Sequential()
+    input_shape = (target_size[0], target_size[1], 3) # H,W,C
+    model.add(Conv2D(32, (3, 3), padding='same', input_shape=input_shape))
+    model.add(Activation('relu'))
+    model.add(Conv2D(32, (3, 3)))
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Dropout(0.25))
+
+    model.add(Conv2D(64, (3, 3), padding='same'))
+    model.add(Activation('relu'))
+    model.add(Conv2D(64, (3, 3)))
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Dropout(0.25))
+
+    model.add(Flatten())
+    model.add(Dense(512))
+    model.add(Activation('relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(len(labels), activation='softmax'))
+
+    model.compile(
+        optimizers.RMSprop(learning_rate=learning_rate),
+        loss="sparse_categorical_crossentropy", 
+        metrics=["accuracy"])
+
+
+def fit_model(
+    model=None,
+    train_generator=None,
+    valid_generator=None,
+    class_weights_by_idx=None,
+    epochs=None):
+
+    step_size_train=train_generator.n//train_generator.batch_size
+    step_size_valid=valid_generator.n//valid_generator.batch_size
+
+    # update the model so that model(train) gradually matches model(valid)
+    train_valid_history = model.fit_generator(
+        generator=train_generator,
+        shuffle=True, # shuffle before each epoch
+        steps_per_epoch=None, # no shuffle if not None
+        validation_data=valid_generator,
+        validation_steps=step_size_valid,
+        class_weight=class_weights_by_idx,
+        epochs=epochs)
+
+def quick_evaluate_model(
+    model=None,
+    generator_name=None,
+    generator=None):
+    score = model.evaluate(generator)
+    print(generator_name, 'loss:', score[0])
+    print(generator_name, 'accuracy:', score[1])
+
+def save_model(models_root_dir=None, model=None):
+    dt = datetime.datetime.utcnow().isoformat()
+    model_dir_path = os.path.join(models_root_dir, f"model-{dt}")
+    model.save(model_dir_path)
+
+def find_latest_model_dir_path(models_root_dir=None):
+    '''find the latest model_dir_path under models_root_dir'''
+    def sort_dict_by_value(d, reverse = False):
+        return dict(sorted(d.items(), key = lambda x: x[1], reverse = reverse))
+
+    only_model_dirs = [f for f in os.listdir(models_root_dir) if isdir(join(models_root_dir, f) and f.startswith("model-") )]
+    if len(only_model_dirs) == 0:
+        return None
+    ctimes = {f: os.path.getctime(f) for f in only_model_dirs}
+    ctimes_r = sort_dict_by_value(ctimes, reverse = True)
+    return ctimes_r[0].key()
+
+def load_latest_model(models_root_dir=None):
+    model_dir_path = find_latest_model_dir_path(models_root_dir)
+    if model_dir_path is not None:
+        return keras.models.load_model(model_dir_path)
+    return None
+
+
+def evaluate_model(
+    model=None,
+    valid_generator=None,
+    test_generator=None,
+    true_test_generator=None,
+    idx_to_label_map=None,
+    labels=None):
+
+    test_idx = generate_random_idx(test_generator)
+
+    # Confusion Matrix and Classification Report
+    Y_valid_pred = model.predict(valid_generator)
+    y_valid_pred = np.argmax(Y_valid_pred, axis=1)
+
+    print('Confusion Matrix')
+    print(confusion_matrix(labels, y_valid_pred))
+
+    print('Classification Report')
+    target_names = [idx_to_label_map[idx] for idx in np.unique(y_valid_pred)]
+    assert set(target_names).issubset(set(labels))
+    assert set(y_valid_pred).issubset(set(labels))
+
+    # use the model to get class predictions for each image in the test dataset
+    Y_test_pred = model.predict(test_generator) # each image has NUM_CLASSES [0..1] prediction probabilities
+    y_test_pred = np.argmax(Y_test_pred, axis=1) # each image has a class index with the highest prediction probability
+    assert len(Y_test_pred) == len(y_test_pred)
+
+    # get the actual Images (x_test_true) and actual labels (y_test_true) from the test dataset
+    x_test_true, y_test_true = next(true_test_generator)
+    assert len(x_test_true) == len(y_test_true)
+
+    filenames = test_generator.filenames
+    num_images = len(filenames)
+    assert len(y_test_pred) == num_images
+
+    # Plot image_files with pred/true_test labels  
+    pred_v_pred_true_labels = [ f"{y_test_pred[i]}[{i}]/{y_test_true[i]}[{i}]" for i in range(num_images) ]
+    pred_v_true_filenames = x_test_true
+    plot_idxed_imagefiles_with_labels("pred vs true labels", pred_v_true_filenames, pred_v_true_labels, test_idx)
+
+    # Plot the confusion matrix  of pred vs true
+    pred_true_display_labels = labels
+    cm = confusion_matrix(y_test_pred, y_test_true)
+    disp = ConfusionMatrixDisplay(
+        confusion_matrix=cm, 
+        display_labels=pred_true_display_labels)
+    disp.plot(cmap=plt.cm.Blues)
+    print(f"Showing confusion matrix pred vs true labels")
+    print(f"Click key or mouse in window to close.")
+    plt.waitforbuttonpress()
+    plt.close("all")
+    plt.show(block=False)
+
+def main():
+
+    CSV_DATA_FILE = "../csv-data/S01E01-S01E02-data.csv"
+    SRC_IMGS_DIR = "../all-src-images/"
+    MODELS_DIR = "./models/"
+
+    LABELS = ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'] 
+    LABEL_TO_IDX_MAP = { 'Junk':0, 'Common':1, 'Uncommon':2, 'Rare':3, 'Legendary':4 }
+    IDX_TO_LABEL_MAP = { value: key for key,value in LABEL_TO_IDX_MAP.items()}
+ 
+    # file size
+    FILE_IMAGE_HEIGHT = 288
+    FILE_IMAGE_WIDTH = 512
+
+    # frame rate and image size
+    FRAME_SUBSAMPLE_RATE = 24
+    IMAGE_HEIGHT = int(round(FILE_IMAGE_HEIGHT / 2))
+    IMAGE_WIDTH = int(round(FILE_IMAGE_WIDTH / 2))
+    TARGET_SIZE=(IMAGE_HEIGHT,IMAGE_WIDTH)
+
+    BATCH_SIZE = 32
+    EPOCHS = 50
+    DATA_SPLITS = {'train_size':0.70, 'valid_size':0.20, 'test_size':0.10}
+    LEARNING_RATE = 0.0001
+
+    generators, label_weights_by_idx = create_generators(
+        csv_data_file=CSV_DATA_FILE, 
+        src_imgs_dir=SRC_IMGS_DIR,
+        label_to_idx_map = LABEL_TO_IDX_MAP,
+        idx_to_label_map = IDX_TO_LABEL_MAP,
+        data_splits = DATA_SPLITS,
+        frame_subsample_rate=FRAME_SUBSAMPLE_RATE,
+        batch_size=BATCH_SIZE,
+        target_size=TARGET_SIZE)
+
+    (train_generator, valid_generator, test_generator, true_test_generator) = generators
+
+    model = create_model(
+        target_size=TARGET_SIZE,
+        learning_rate=LEARNING_RATE,
+        labels=LABELS) 
+
+    model = fit_model(
+        model=model,
+        train_generator=train_generator,
+        valid_generator=valid_generator,
+        class_weights_by_idx=label_weights_by_idx,
+        epochs=EPOCHS)
+
+    #----------- save/load test ----------------#
+    pre_saved_score = quick_evaluate_model(
+        model, "valid_generator", valid_generator)
+
+    save_model( models_root_dir=MODELS_ROOT_DIR, model=model)
+    
+    saved_model = load_latest_model(models_root_dir)
+
+    saved_score = quick_evaluate_model(
+        saved_model, "valid_generator", valid_generator)
+
+    assert saved_score == pre_saved_score
+    #----------- save/load test ----------------#
+
+    evaluate_model(
+        model=model,
+        valid_generator=valid_generator,
+        test_generator=test_generator,
+        true_test_generator=true_test_generator,
+        idx_to_label_map=IDX_TO_LABEL_MAP,
+        labels=LABELS)
+
+if __name__ == '__main__':
+    main()

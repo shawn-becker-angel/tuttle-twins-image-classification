@@ -26,52 +26,50 @@ def get_unique_random_ints(minVal: int, maxVal: int, N: int):
         if len(rints) == N:
             return rints
 
-def plot_random_generator_images_with_labels(name, generator, idx_to_label_map):
+def generate_random_idx(generator):
+    return get_unique_random_ints(0, generator.n, generator.n)
+
+def plot_idxed_generator_images(name, generator, idx, idx_to_label_map=None):
     generator.reset()
-    X, y = generator.next()
+    if idx_to_label_map is not None:
+        X, y = generator.next()
+    else:
+        X = generator.next()
+
     fig = plt.figure(figsize=(12,8))
     N = min(len(X),12) # number of images
-    random_ints = get_unique_random_ints(0,len(X),N)
     for n in range(N):
-        i = random_ints[n] # random i'th image in X
+        i = idx[n]
         plt.subplot(3,4,n+1)
         plt.imshow(X[i,:,:,:])   
         plt.axis('off')
-        index = y[i]
-        plt.title(f"{name}[{i}]: {idx_to_label_map[index]}")
-    print(f"Showing {N} {name} images and labels")
+        if idx_to_label_map is not None:
+            y_idx = y[i]
+            plt.title(f"{name}[{i}]: {idx_to_label_map[y_idx]}")
+    if idx_to_label_map is None:
+        print(f"Showing {N} {name} images only")
+    else:
+        print(f"Showing {N} {name} images and labels")
     wait_for_click()
 
-def plot_random_generator_images_no_labels(name, generator):
-    X = next(generator)
-    X = X[1:]  # strip off batch dimension
-    N = min(len(X),12) # number of images
-    fig = plt.figure(figsize=(12,8))
-    random_ints = get_unique_random_ints(0,len(X),N)
-    for n in range(N):
-        i = random_ints[n]
-        plt.subplot(3,4,n+1)
-        plt.imshow(X[i])
-        plt.title(f"{name}[{i}]: unknown")
-    print(f"Showing {name} images")
-    wait_for_click()
 
-def plot_random_imagefiles_with_labels(name, image_files, labels):
+def plot_idxed_image_files_with_labels(name, image_files, labels, idx):
+    assert len(image_files) == len(labels) == len(idx), "ERROR: length failures"
     N = min(len(X),12) # number of images
     fig = plt.figure(figsize=(12,8))
-    random_ints = get_unique_random_ints(0,len(image_files)+1,N)
     for n in range(N):
-        i = random_ints[n]
+        i = idx[n]
         plt.subplot(3,4,n+1)
         image = cv2.imread(image_files[i])
         plt.imshow(image)   
         plt.axis('off')
         plt.title(f"{name}[{i}]: {labels[i]}")
-    print(f"Showing {name} images and labels")
+    print(f"Showing {N} {name} images and labels")
     wait_for_click()
 
 
 def plot_confusion_matrix(labels, y_pred, y_test):
+
     from sklearn.metrics import ConfusionMatrixDisplay
     from sklearn.metrics import confusion_matrix
     import matplotlib.pyplot as plt
