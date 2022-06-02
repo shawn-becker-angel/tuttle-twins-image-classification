@@ -28,7 +28,6 @@ from keras.models import Sequential
 from keras.preprocessing.image import ImageDataGenerator
 from keras.layers import Input, Dense, Activation, Flatten, Dropout, BatchNormalization
 from keras.layers import Conv2D, MaxPooling2D
-from keras import regularizers, optimizers
 
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 
@@ -36,7 +35,7 @@ from matplotlib import pyplot as plt
 from matplotlib_utils import \
     plot_idxed_generator_images, \
     plot_idxed_image_files_with_labels, \
-    generate_random_idx
+    generate_random_plot_idx
     
 from history_utils import plot_history, save_history
 from shuffle_utils import triple_shuffle_split
@@ -97,7 +96,8 @@ def create_generators(
 
     # used as class_weights in model.fit(training)
     # convert label_weights by index to label_weights by label
-    label_weights_by_idx = {i:total_label_weights_by_label[label_to_idx_map[i]] for i in label_to_idx_map.keys()}
+    assert idx_to_label_map is not None
+    label_weights_by_idx = {idx:total_label_weights_by_label[idx_to_label_map[idx]] for idx in idx_to_label_map.keys()}
 
     # validation and test data are shuffled only at start
     # training set is shuffled on each epocn
@@ -149,10 +149,10 @@ def create_generators(
         interpolation="box",  # prevents antialiasing if subsampling
         target_size=target_size)
 
-    train_idx = generate_random_idx(train_generator)
+    train_plot_idx = generate_random_plot_idx(train_generator)
     plot_idxed_generator_images(
         name="train", generator=train_generator, 
-        idx=train_idx, idx_to_label_map=idx_to_label_map)
+        plot_idx=train_plot_idx, idx_to_label_map=idx_to_label_map)
 
     #------------------------------------
     # Valid
@@ -173,10 +173,10 @@ def create_generators(
         interpolation="box",
         target_size=target_size)
 
-    valid_idx = generate_random_idx(valid_generator)
+    valid_plot_idx = generate_random_plot_idx(valid_generator)
     plot_idxed_generator_images(
         "valid", valid_generator, 
-        valid_idx, idx_to_label_map)
+        valid_plot_idx, idx_to_label_map)
 
     #------------------------------------
     # Test
@@ -198,10 +198,10 @@ def create_generators(
         interpolation="box",
         target_size=target_size)
 
-    test_idx = generate_random_idx(test_generator)
+    test_plot_idx = generate_random_plot_idx(test_generator)
     plot_idxed_generator_images(
         "test", test_generator, 
-        test_idx)
+        test_plot_idx)
 
     # image filenames with labels
     true_test_generator = test_datagen.flow_from_dataframe(
@@ -222,16 +222,20 @@ def create_generators(
 
     plot_idxed_generator_images(
         "true_test", true_test_generator, 
-        test_idx, idx_to_label_map)
+        test_plot_idx, idx_to_label_map)
 
     generators = (train_generator, valid_generator, test_generator, true_test_generator)
-    return  generators, label_weights_by_idx
+    return  (generators, label_weights_by_idx)
 
 
 def create_model(
     target_size=None,
     learning_rate=None, 
     labels=None): 
+    
+    assert target_size is not None
+    assert learning_rate is not None
+    assert labels is not None
 
     # https://datascience.stackexchange.com/a/24524
 
@@ -257,8 +261,16 @@ def create_model(
     model.add(Dropout(0.5))
     model.add(Dense(len(labels), activation='softmax'))
 
+    optimizer = tf.keras.optimizers.RMSprop(
+        learning_rate=learning_rate,
+        rho=0.9,
+        momentum=0.0,
+        epsilon=1e-07,
+        centered=False,
+    )
+
     model.compile(
-        optimizers.RMSprop(learning_rate=learning_rate),
+        optimizer,
         loss="sparse_categorical_crossentropy", 
         metrics=["accuracy"])
 
@@ -323,7 +335,7 @@ def evaluate_model(
     idx_to_label_map=None,
     labels=None):
 
-    test_idx = generate_random_idx(test_generator)
+    test_idx = generate_random_plot_idx(test_generator)
 
     # Confusion Matrix and Classification Report
     Y_valid_pred = model.predict(valid_generator)
@@ -371,7 +383,7 @@ def evaluate_model(
 def main():
 
     CSV_DATA_FILE = "../csv-data/S01E01-S01E02-data.csv"
-    SRC_IMGS_DIR = "../all-src-images/"
+    SRC_IMGS_DIR = "../src-images/"
     MODELS_DIR = "./models/"
 
     LABELS = ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'] 
@@ -393,7 +405,7 @@ def main():
     DATA_SPLITS = {'train_size':0.70, 'valid_size':0.20, 'test_size':0.10}
     LEARNING_RATE = 0.0001
 
-    generators, label_weights_by_idx = create_generators(
+    (generators, label_weights_by_idx) = create_generators(
         csv_data_file=CSV_DATA_FILE, 
         src_imgs_dir=SRC_IMGS_DIR,
         label_to_idx_map = LABEL_TO_IDX_MAP,

@@ -16,7 +16,7 @@ from keras.utils import load_img, img_to_array
 from cv2 import imread, resize
 
 CSV_DATA_DIR = "../csv-data"
-ALL_SRC_IMAGES_DIR = "../all-src-images"
+SRC_IMAGES_DIR = "../src-images"
 
 
 def run_piped_commands(cmds):

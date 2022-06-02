@@ -17,48 +17,32 @@ def wait_for_click():
     # plt.show(block=False)
 
 def get_unique_random_ints(minVal: int, maxVal: int, N: int):
-    '''Return a list of N unique int values x such that minVal <= x < maxVal'''
-    rints = []
-    for n in range(N*2):
-        rint = np.random.randint(minVal, maxVal)
-        if not rint in rints:
-            rints.append(rint)
-        if len(rints) == N:
-            return rints
+    R = maxVal-minVal
+    if N > R:
+        raise Exception("not possible to create N unique integers over range of {R} integers")
+    rint = list(range(minVal,maxVal))
+    np.random.shuffle(rint)
+    return rint
 
-def generate_random_idx(generator):
-    return get_unique_random_ints(0, generator.n, generator.n)
+def generate_random_plot_idx(generator):
+    N = generator.n
+    if N < 1:
+        msg = "ERROR: generator.n is not > zero"
+        raise Exception(msg)
+    
+    rints = get_unique_random_ints(0, N, N)
+    if len(rints) != N:
+        msg = f"ERROR: rints:{len(rints)} != N:{N}"
+        raise Exception(msg)
+    
+    return rints
 
-def plot_idxed_generator_images(name, generator, idx, idx_to_label_map=None):
-    generator.reset()
-    if idx_to_label_map is not None:
-        X, y = generator.next()
-    else:
-        X = generator.next()
-
-    fig = plt.figure(figsize=(12,8))
-    N = min(len(X),12) # number of images
-    for n in range(N):
-        i = idx[n]
-        plt.subplot(3,4,n+1)
-        plt.imshow(X[i,:,:,:])   
-        plt.axis('off')
-        if idx_to_label_map is not None:
-            y_idx = y[i]
-            plt.title(f"{name}[{i}]: {idx_to_label_map[y_idx]}")
-    if idx_to_label_map is None:
-        print(f"Showing {N} {name} images only")
-    else:
-        print(f"Showing {N} {name} images and labels")
-    wait_for_click()
-
-
-def plot_idxed_image_files_with_labels(name, image_files, labels, idx):
-    assert len(image_files) == len(labels) == len(idx), "ERROR: length failures"
-    N = min(len(X),12) # number of images
+def plot_idxed_image_files_with_labels(name, image_files, labels, plot_idx):
+    assert len(image_files) == len(labels) == len(plot_idx), "ERROR: length failures"
+    N = min(len(image_files),12) # number of images
     fig = plt.figure(figsize=(12,8))
     for n in range(N):
-        i = idx[n]
+        i = plot_idx[n]
         plt.subplot(3,4,n+1)
         image = cv2.imread(image_files[i])
         plt.imshow(image)   
@@ -66,6 +50,36 @@ def plot_idxed_image_files_with_labels(name, image_files, labels, idx):
         plt.title(f"{name}[{i}]: {labels[i]}")
     print(f"Showing {N} {name} images and labels")
     wait_for_click()
+
+def plot_idxed_generator_images(name, generator, plot_idx, idx_to_label_map=None):
+    assert len(plot_idx) > 0, "ERROR: empty plot_idx"
+    generator.reset()
+    if idx_to_label_map is not None:
+        X, y = generator.next()
+    else:
+        X = generator.next()
+        y = None
+
+    fig = plt.figure(figsize=(12,8))
+    
+    # trim plot_idx to not exceed the new N
+    N = min(len(X),12) # number of images
+    plot_idx = [plot_idx[n] for n in plot_idx if plot_idx[n] < N] 
+    
+    for n in range(N):
+        i = plot_idx[n]
+        plt.subplot(3,4,n+1)
+        plt.imshow(X[i,:,:,:])   
+        plt.axis('off')
+        label = "unknown" if y is None else idx_to_label_map[y[i]]
+        plt.title(f"{name}[{i}]: {label}")
+
+    legend = "images only" if y is None else "images and labels"
+    print(f"Showing {N} {name} {legend}")
+        
+    wait_for_click()
+
+
 
 
 def plot_confusion_matrix(labels, y_pred, y_test):
