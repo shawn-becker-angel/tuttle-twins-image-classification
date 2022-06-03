@@ -31,7 +31,7 @@ from keras.layers import Input, Dense, Activation, Flatten, Dropout
 from keras.layers import Conv2D, MaxPooling2D
 
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
-
+from PIL import Image
 from matplotlib import pyplot as plt
 from matplotlib_utils import \
     plot_idxed_generator_images, \
@@ -41,7 +41,7 @@ from matplotlib_utils import \
     
 from history_utils import plot_history, save_history
 from shuffle_utils import triple_shuffle_split
-from model_file_utils import save_model, load_latest_model, load_model, models_are_equivalent
+import model_file_utils
 
 import logging
 logging.basicConfig(level = logging.INFO)
@@ -55,6 +55,8 @@ with tf.device('/GPU'):
     logger.info(f"a:{a}")
     logger.info(f"b:{b}")
 
+#------------ <create_generators> --------------#
+
 def create_generators(
     csv_data_file, 
     src_imgs_dir,
@@ -64,7 +66,7 @@ def create_generators(
     frame_subsample_rate,
     batch_size,
     target_size,
-    plot_random_images=True):
+    plot_random_images):
 
     # read CSV_DATA_FILE, which 
     # has 55352 rows for all tuttle_twins frames from S01E01 to S01E02
@@ -108,11 +110,7 @@ def create_generators(
 
     # used as class_weights in model.fit(training)
     # convert label_weights by index to label_weights by label
-    assert idx_to_label_map is not None
     label_weights_by_idx = {idx:total_label_weights_by_label[idx_to_label_map[idx]] for idx in idx_to_label_map.keys()}
-
-    # valid and test data are shuffled only at start
-    # training set is shuffled on each epoch
 
     # create indices with percentages over N
     train_idx, valid_idx, test_idx = triple_shuffle_split(
@@ -150,11 +148,8 @@ def create_generators(
     logger.info(f"valid_df.len: {len(valid_df)}")
     logger.info(f"test_df.len: {len(test_df)}")
 
-    #------------------------------------
-    # Train
-
+    # train_generator -------------------------
     datagen = ImageDataGenerator(rescale=1./255)
-
     train_generator = datagen.flow_from_dataframe(
         dataframe=train_df,
         directory=None, # filenames are already paths
@@ -175,9 +170,7 @@ def create_generators(
             name="train", generator=train_generator, 
             plot_idx=train_plot_idx, idx_to_label_map=idx_to_label_map)
 
-    #------------------------------------
-    # Valid
-
+    # valid_generator ------------------------------
     valid_generator = datagen.flow_from_dataframe(
         dataframe=valid_df,
         directory=None, # filenames are already paths
@@ -199,11 +192,9 @@ def create_generators(
             "valid", valid_generator, 
             valid_plot_idx, idx_to_label_map)
 
-    #------------------------------------
-    # Test
-
     test_datagen = ImageDataGenerator(rescale=1./255.)
 
+    # test_generator ----------------------------
     # image filenames no labels
     test_generator = test_datagen.flow_from_dataframe(
         dataframe=test_df,
@@ -218,15 +209,16 @@ def create_generators(
         interpolation="box",
         target_size=target_size)
 
-    re_X_test = test_generator.next()
-  
     test_plot_idx = generate_random_plot_idx(test_generator)
+
+    re_X_test = test_generator.next()
 
     if plot_random_images:
         plot_idxed_generator_images(
             "test", test_generator, 
             test_plot_idx)
 
+    # true_generator -------------------------
     # image filenames with labels
     true_generator = test_datagen.flow_from_dataframe(
         dataframe=test_df,
@@ -255,6 +247,9 @@ def create_generators(
     generators = (train_generator, valid_generator, test_generator)
     return  (generators, true_df, label_weights_by_idx)
 
+#------------ </create_generators> --------------#
+
+#------------ <create_model> --------------#
 
 def create_model(
     target_size,
@@ -300,13 +295,18 @@ def create_model(
     
     return model
 
+#------------ </create_model> --------------#
+
+#------------ <fit_model> --------------#
 
 def fit_model(
     model,
     train_generator,
     valid_generator,
-    class_weights_by_idx,
+    label_weights_by_idx,
     epochs):
+    
+    logging.info(f"fitting model in {epochs} epochs")
     
     step_size_valid=valid_generator.n//valid_generator.batch_size
 
@@ -320,12 +320,24 @@ def fit_model(
         steps_per_epoch=None, # no shuffle if not None
         validation_data=valid_generator,
         validation_steps=step_size_valid,
-        class_weight=class_weights_by_idx,
+        class_weight=label_weights_by_idx,
         epochs=epochs)
     
     plot_model_fit_history(history)
     
     return model
+
+#------------ </fit_model> --------------#
+
+
+def save_model(
+    model,
+    models_root_dir):
+    model_dir_path = model_file_utils.save_model(models_root_dir, model)
+    logger.info(f"saved model to model_dir_path: {model_dir_path}")
+    loaded_model = model_file_utils.load_latest_model(models_root_dir)
+    assert model_file_utils.models_are_equivalent(model, loaded_model)
+
 
 def quick_evaluate_model(
     model,
@@ -334,6 +346,8 @@ def quick_evaluate_model(
     score = model.evaluate(generator)
     logger.info(f"{generator_name} loss: {score[0]}")
     logger.info(f"{generator_name} accuracy: {score[1]}")
+
+#------------ <evaluatemodel> --------------#
 
 def evaluate_model(
     model,
@@ -375,103 +389,167 @@ def evaluate_model(
     plt.close("all")
     plt.show(block=False)
 
+#------------ </evaluatemodel> --------------#
+
+def get_imagefile_shape(csv_data_file, src_imgs_dir):
+    with open(csv_data_file, "r") as f:
+        line = f.readline().strip()
+        imagefile = line.split(",")[0]
+        imagepath = os.path.join(src_imgs_dir, imagefile)
+        if os.path.isfile(imagepath):
+            imagefile = Image.open(imagepath)
+            return (imagefile.size[1], imagefile.size[0])
+
+#------------ <run_pipeline> --------------#
+
+def run_pipeline(params):
+    '''use hyper-paramters to 
+        create generators, 
+        create model, 
+        fit model,
+        save model,
+        evaluate_level and
+        return evaluation results'''
+
+    csv_data_file = params['csv_data_file']
+    src_imgs_dir = params['src_imgs_dir']
+    models_root_dir = params['models_root_dir']
+    data_splits = params['data_splits']
+    frame_subsample_rate = params['frame_subsample_rate']
+    image_scale_factor = params['image_scale_factor']
+    batch_size = params['batch_size']
+    learning_rate = params['learning_rate']
+    epochs = params['epochs']
+    plot_random_images = params['plot_random_images']
+    image_plots_only = params['image_plots_only']
+    model = params['model']
+
+    (imagefile_height, imagefile_width) = get_imagefile_shape(csv_data_file, src_imgs_dir)
+    image_height = int(round(imagefile_height * image_scale_factor))
+    image_width = int(round(imagefile_width * image_scale_factor))
+    target_size = (image_height,image_width)
+    
+    labels = params['labels']
+    label_to_idx_map = params['label_to_idx_map']
+    idx_to_label_map = {label_to_idx_map[label]:label for label in label_to_idx_map.keys() }
+
+    (generators, true_df, label_weights_by_idx) = create_generators(
+        csv_data_file,
+        src_imgs_dir,
+        label_to_idx_map,
+        idx_to_label_map,
+        data_splits,
+        frame_subsample_rate,
+        batch_size,
+        target_size,
+        plot_random_images)
+    
+    (train_generator, valid_generator, test_generator) = generators
+
+    # return early if image_plots_only is True
+    if image_plots_only:
+        return
+    
+    # train/fit the model only if model is None
+    if model is None:
+        model = create_model(
+            target_size,
+            learning_rate,
+            labels) 
+
+        model = fit_model(
+            model,
+            train_generator,
+            valid_generator,
+            label_weights_by_idx,
+            epochs)
+        
+        model_dir_path = save_model(
+            model, 
+            models_root_dir)
+
+        history = evaluate_model(
+            model,
+            test_generator,
+            true_df,
+            idx_to_label_map,
+            labels)
+        
+    return (history, model_dir_path)
+
+#------------ </run_pipeline> --------------#
+
+#------------ <tests> --------------#
+
 def run_tests():
     logger.info("run_tests() not yet implementated")
 
-def main():
-    # usage:
-    # python cnn_image_classification.py ( run | test | latest | img-plots-only | <model_dir_path> )
+#------------ </tests> --------------#
 
+
+#------------ <main> --------------#
+
+def main():
+    
+    usage = \
+    """
+    usage:
+        python cnn_image_classification.py ( help | run | test | latest | img-plots-only | <model_dir_path> )
+    """
+    
+    # defaults to be overridden by command line argvs
     model = None
-    img_plots_only = False
+    image_plots_only = False
     model_dir_path = None
+    
+    # process command line argvs
     if len(sys.argv) > 1:
         argv1 = sys.argv[1]
-        if argv1 == 'run':
+        if argv1 == 'help':
+            print(usage)
+            return 
+        elif argv1 == 'run':
             pass
         elif argv1 == 'test':
             run_tests()
             return
         elif argv1 == 'latest':
-            model = load_latest_model()
+            model = model_file_utils.load_latest_model()
             if model is None:
                 logger.info("no latest model_dir_path found")
                 logger.info("exiting now")
                 return
         elif argv1 == 'img-plots-only':
-            img_plots_only = True 
+            image_plots_only = True 
         else:
             model_dir_path = argv1
-            model = load_model(model_dir_path)
+            model = model_file_utils.load_model(model_dir_path)
             if model is None:
                 raise Exception(f"load_model({model_dir_path}) failed")
 
-    CSV_DATA_FILE = "../csv-data/S01E01-S01E02-data.csv"
-    SRC_IMGS_DIR = "../src-images/"
-    MODELS_ROOT_DIR = "./models/"
+    # use command line args to modify parameters
+    parameters = {
+        "csv_data_file" : "../csv-data/S01E01-S01E02-data.csv",
+        "src_imgs_dir" : "../src-images/",
+        "models_root_dir" : "./models/",
+        "labels" : ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'],
+        "label_to_idx_map" : { 'Junk':0, 'Common':1, 'Uncommon':2, 'Rare':3, 'Legendary':4 },
+        "frame_subsample_rate" : 24,
+        "image_scale_factor" : 0.5,
+        "batch_size" : 32,
+        "epochs" : 1,
+        "data_splits" : {'train_size':0.70, 'valid_size':0.20, 'test_size':0.10},
+        "learning_rate" : 0.0001,
+        "plot_random_images" : True,
+        "image_plots_only" : image_plots_only,
+        "model" : model
+    }
 
-    LABELS = ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'] 
-    LABEL_TO_IDX_MAP = { 'Junk':0, 'Common':1, 'Uncommon':2, 'Rare':3, 'Legendary':4 }
-    IDX_TO_LABEL_MAP = { value: key for key,value in LABEL_TO_IDX_MAP.items()}
- 
-    # file size
-    FILE_IMAGE_HEIGHT = 288
-    FILE_IMAGE_WIDTH = 512
-
-    # frame rate and image size
-    FRAME_SUBSAMPLE_RATE = 24
-    IMAGE_HEIGHT = int(round(FILE_IMAGE_HEIGHT / 2))
-    IMAGE_WIDTH = int(round(FILE_IMAGE_WIDTH / 2))
-    TARGET_SIZE=(IMAGE_HEIGHT,IMAGE_WIDTH)
-
-    BATCH_SIZE = 32
-    EPOCHS = 1
-    DATA_SPLITS = {'train_size':0.70, 'valid_size':0.20, 'test_size':0.10}
-    LEARNING_RATE = 0.0001
+    # run the entire pipeline
+    (history, model_dir_path) = run_pipeline(parameters)
     
-    (generators, true_df, label_weights_by_idx) = create_generators(
-        csv_data_file=CSV_DATA_FILE, 
-        src_imgs_dir=SRC_IMGS_DIR,
-        label_to_idx_map = LABEL_TO_IDX_MAP,
-        idx_to_label_map = IDX_TO_LABEL_MAP,
-        data_splits = DATA_SPLITS,
-        frame_subsample_rate=FRAME_SUBSAMPLE_RATE,
-        batch_size=BATCH_SIZE,
-        target_size=TARGET_SIZE,
-        plot_random_images=img_plots_only)
-    
-    (train_generator, valid_generator, test_generator) = generators
+    #------------ </main> --------------#
 
-    # return early if img_plots_only is True
-    if img_plots_only:
-        return
-
-    # train/fit the model only if model is None
-    if model is None:
-        model = create_model(
-            target_size=TARGET_SIZE,
-            learning_rate=LEARNING_RATE,
-            labels=LABELS) 
-
-        model = fit_model(
-            model=model,
-            train_generator=train_generator,
-            valid_generator=valid_generator,
-            class_weights_by_idx=label_weights_by_idx,
-            epochs=EPOCHS)
-        
-        model_dir_path = save_model(MODELS_ROOT_DIR, model)
-        logger.info(f"saved model to model_dir_path: {model_dir_path}")
-        loaded_model = load_latest_model(MODELS_ROOT_DIR)
-        assert models_are_equivalent(model, loaded_model)
-
-
-    evaluate_model(
-        model,
-        test_generator,
-        true_df,
-        idx_to_label_map=IDX_TO_LABEL_MAP,
-        labels=LABELS)
 
 if __name__ == '__main__':
     with tf.device('/GPU'):
