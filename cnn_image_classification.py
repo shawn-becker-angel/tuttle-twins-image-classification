@@ -36,7 +36,8 @@ from matplotlib import pyplot as plt
 from matplotlib_utils import \
     plot_idxed_generator_images, \
     plot_idxed_image_files_with_labels, \
-    generate_random_plot_idx
+    generate_random_plot_idx, \
+    plot_model_fit_history
     
 from history_utils import plot_history, save_history
 from shuffle_utils import triple_shuffle_split
@@ -313,7 +314,7 @@ def fit_model(
     # step_size_train=train_generator.n//train_generator.batch_size 
 
     # update the model so that model(train) gradually matches model(valid)
-    model.fit(
+    history = model.fit(
         train_generator,
         shuffle=True, # shuffle before each epoch
         steps_per_epoch=None, # no shuffle if not None
@@ -321,6 +322,8 @@ def fit_model(
         validation_steps=step_size_valid,
         class_weight=class_weights_by_idx,
         epochs=epochs)
+    
+    plot_model_fit_history(history)
     
     return model
 

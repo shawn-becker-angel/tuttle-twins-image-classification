@@ -108,6 +108,30 @@ def plot_histogram(title: str='Title', data: List[float]=[], with_normal: bool=T
     plt.show()
     wait_for_click()
 
+def plot_model_fit_history(history):
+    # see https://machinelearningmastery.com/display-deep-learning-model-training-history-in-keras/
+    
+    # list all data in history
+    print(history.history.keys())
+    # summarize history for accuracy
+    plt.plot(history.history['accuracy'])
+    plt.plot(history.history['val_accuracy'])
+    plt.title('model accuracy')
+    plt.ylabel('accuracy')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'test'], loc='upper left')
+    plt.show()
+    # summarize history for loss
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title('model loss')
+    plt.ylabel('loss')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'test'], loc='upper left')
+    plt.show()
+    wait_for_click()
+
+
 #==============================================
 # TESTS
 #==============================================
@@ -133,13 +157,6 @@ def test_plot_rand_int_histogram():
         print(f"ERROR: maxS:{maxS} not < maxVal:{maxVal}")
     plot_histogram(title="randint distribution", data=s )
 
-def test_compute_and_plot_confusion_matrix():
-    true_labels = list(range(10)) * 1000
-    random.shuffle(true_labels)
-    pred_labels = list(range(10)) * 1000
-    random.shuffle(pred_labels)
-    compute_and_plot_confusion_matrix(true_labels, pred_labels)  
-
 #==============================================
 # MAIN
 #==============================================
@@ -147,5 +164,4 @@ def test_compute_and_plot_confusion_matrix():
 if __name__ == "__main__":
     test_plot_gamma_histogram()
     test_plot_rand_int_histogram()
-    test_compute_and_plot_confusion_matrix()
     print("done")
