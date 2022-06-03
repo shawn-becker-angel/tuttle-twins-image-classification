@@ -334,7 +334,6 @@ def evaluate_model(
     idx_to_label_map,
     labels):
 
-
     logger.info('Classification Report ')
 
     # use the model to get y_idx predictions for each image in the test dataset
@@ -358,7 +357,7 @@ def evaluate_model(
     true_filenames = X_test_true
     plot_idxed_imagefiles_with_labels("pred vs true labels", true_filenames, pred_v_true_labels, test_idx)
 
-    # Plot the confusion matrix of pred vs true labels
+    # compute and display the confusion matrix of pred vs true labels
     cm = confusion_matrix(y_test_true, y_test_pred)
     disp = ConfusionMatrixDisplay(
         confusion_matrix=cm, 
