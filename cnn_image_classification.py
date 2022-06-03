@@ -340,14 +340,24 @@ def evaluate_model(
     Y_test_pred = model.predict(test_generator) # each image has NUM_CLASSES [0..1] prediction probabilities
     y_test_pred = np.argmax(Y_test_pred, axis=1) # each image has a class index with the highest prediction probability
 
+    # This passes 231 == 231
+    assert len(test_generator.filenames) == len(true_test_generator.filenames)
+
     # get the true filenames (X_test_true) and true idx (y_test_true) from the true test dataset
     X_test_true, y_test_true = next(true_test_generator)
+    # !! X_test_true and y_test_true have lengths of only 32! 
+    # Note that true_test_generator.reset() has no effect.
+    # Could it be that its only 32 because only 
+    # the first batch of 32 has been run?
 
     # assert that y_test_pred idx and y_test_true idx have the same lengths
     num_images = len(test_generator.filenames)
     assert len(y_test_pred) == num_images
+
+    # THIS FAILS - 32 != 231
     assert len(y_test_true) == num_images
 
+    # convert idx to labels
     pred_labels = [idx_to_label_map[idx] for idx in y_test_pred]
     true_labels = [idx_to_label_map[idx] for idx in y_test_true]
     
