@@ -20,6 +20,7 @@
 import pandas as pd
 import numpy as np
 import os
+import sys
 import datetime
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
@@ -40,25 +41,29 @@ from matplotlib_utils import \
     
 from history_utils import plot_history, save_history
 from shuffle_utils import triple_shuffle_split
+from model_file_utils import save_model, load_latest_model, load_model, models_are_equivalent
+
+import logging
+logging.basicConfig(level = logging.INFO)
+logger = logging.getLogger("cnn_image_classification")
 
 # verify availability of GPU
 tf.config.list_physical_devices()
 with tf.device('/GPU'):
     a = tf.random.normal(shape=(2,), dtype=tf.float64)
     b = tf.nn.relu(a)
-    print("a:", a)
-    print("b:", b)
-
+    logger.info(f"a:{a}")
+    logger.info(f"b:{b}")
 
 def create_generators(
-    csv_data_file=None, 
-    src_imgs_dir=None,
-    label_to_idx_map=None,
-    idx_to_label_map=None,
-    data_splits=None,
-    frame_subsample_rate=None,
-    batch_size=None,
-    target_size=None,
+    csv_data_file, 
+    src_imgs_dir,
+    label_to_idx_map,
+    idx_to_label_map,
+    data_splits,
+    frame_subsample_rate,
+    batch_size,
+    target_size,
     plot_random_images=True):
 
     # read CSV_DATA_FILE, which 
@@ -66,6 +71,7 @@ def create_generators(
     # and has already undergone 10 iterations of shuffling/resampling
 
     data_df = pd.read_csv(csv_data_file, header=None, dtype=str, names=['filename','label'])
+    logger.info(f"data_df.len: {len(data_df)}")
 
     # counts of each label before frame_subsampling
     y_counts = data_df['label'].value_counts()
@@ -74,6 +80,7 @@ def create_generators(
     # keep only 1 out of frame_subsample_rate frames
     if frame_subsample_rate > 1:
         data_df = data_df.iloc[::frame_subsample_rate, :]
+        logger.info(f"data_df.len: {len(data_df)} subsampled")
 
     # the number of samples used, N, must be 
     # divisible by the test batch_size and by the validation split
@@ -83,6 +90,7 @@ def create_generators(
     # truncate total data_df rows to to N
     data_df = data_df.iloc[:N,:]
     assert len(data_df) == N
+    logger.info(f"data_df.len: {len(data_df)} rounded")
 
     #------------------------------------
     # Split the dataset into X_data and y_data
@@ -130,6 +138,10 @@ def create_generators(
     test_df = pd.concat([X_test,y_test], axis=1)
 
     assert len(train_df) + len(valid_df) + len(test_df) == N
+
+    logger.info(f"train_df.len: {len(train_df)}")
+    logger.info(f"valid_df.len: {len(valid_df)}")
+    logger.info(f"test_df.len: {len(test_df)}")
 
     #------------------------------------
     # Train
@@ -236,9 +248,9 @@ def create_generators(
 
 
 def create_model(
-    target_size=None,
-    learning_rate=None, 
-    labels=None): 
+    target_size,
+    learning_rate, 
+    labels): 
     
     assert target_size is not None
     assert learning_rate is not None
@@ -285,18 +297,12 @@ def create_model(
 
 
 def fit_model(
-    model=None,
-    train_generator=None,
-    valid_generator=None,
-    class_weights_by_idx=None,
-    epochs=None):
+    model,
+    train_generator,
+    valid_generator,
+    class_weights_by_idx,
+    epochs):
     
-    assert model is not None
-    assert train_generator is not None
-    assert valid_generator is not None
-    assert class_weights_by_idx is not None
-    assert epochs is not None
-
     step_size_train=train_generator.n//train_generator.batch_size
     step_size_valid=valid_generator.n//valid_generator.batch_size
 
@@ -309,97 +315,95 @@ def fit_model(
         validation_steps=step_size_valid,
         class_weight=class_weights_by_idx,
         epochs=epochs)
+    
+    return model
 
 def quick_evaluate_model(
-    model=None,
-    generator_name=None,
-    generator=None):
+    model,
+    generator_name,
+    generator):
     score = model.evaluate(generator)
-    print(generator_name, 'loss:', score[0])
-    print(generator_name, 'accuracy:', score[1])
-
-def save_model(models_root_dir=None, model=None):
-    dt = datetime.datetime.utcnow().isoformat()
-    model_dir_path = os.path.join(models_root_dir, f"model-{dt}")
-    model.save(model_dir_path)
-
-def find_latest_model_dir_path(models_root_dir=None):
-    '''find the latest model_dir_path under models_root_dir'''
-    def sort_dict_by_value(d, reverse = False):
-        return dict(sorted(d.items(), key = lambda x: x[1], reverse = reverse))
-
-    only_model_dirs = [f for f in os.listdir(models_root_dir) if isdir(join(models_root_dir, f) and f.startswith("model-") )]
-    if len(only_model_dirs) == 0:
-        return None
-    ctimes = {f: os.path.getctime(f) for f in only_model_dirs}
-    ctimes_r = sort_dict_by_value(ctimes, reverse = True)
-    return ctimes_r[0].key()
-
-def load_latest_model(models_root_dir=None):
-    model_dir_path = find_latest_model_dir_path(models_root_dir)
-    if model_dir_path is not None:
-        return keras.models.load_model(model_dir_path)
-    return None
-
+    logger.info(f"{generator_name} loss: {score[0]}")
+    logger.info(f"{generator_name} accuracy: {score[1]}")
 
 def evaluate_model(
-    model=None,
-    valid_generator=None,
-    test_generator=None,
-    true_test_generator=None,
-    idx_to_label_map=None,
-    labels=None):
+    model,
+    valid_generator,
+    test_generator,
+    true_test_generator,
+    idx_to_label_map,
+    labels):
 
-    test_idx = generate_random_plot_idx(test_generator)
 
-    # Confusion Matrix and Classification Report
-    Y_valid_pred = model.predict(valid_generator)
-    y_valid_pred = np.argmax(Y_valid_pred, axis=1)
+    logger.info('Classification Report ')
 
-    print('Confusion Matrix')
-    print(confusion_matrix(labels, y_valid_pred))
-
-    print('Classification Report')
-    target_names = [idx_to_label_map[idx] for idx in np.unique(y_valid_pred)]
-    assert set(target_names).issubset(set(labels))
-    assert set(y_valid_pred).issubset(set(labels))
-
-    # use the model to get class predictions for each image in the test dataset
+    # use the model to get y_idx predictions for each image in the test dataset
     Y_test_pred = model.predict(test_generator) # each image has NUM_CLASSES [0..1] prediction probabilities
     y_test_pred = np.argmax(Y_test_pred, axis=1) # each image has a class index with the highest prediction probability
-    assert len(Y_test_pred) == len(y_test_pred)
 
-    # get the actual Images (x_test_true) and actual labels (y_test_true) from the test dataset
-    x_test_true, y_test_true = next(true_test_generator)
-    assert len(x_test_true) == len(y_test_true)
+    # get the true filenames (X_test_true) and true idx (y_test_true) from the true test dataset
+    X_test_true, y_test_true = next(true_test_generator)
 
-    filenames = test_generator.filenames
-    num_images = len(filenames)
+    # assert that y_test_pred idx and y_test_true idx have the same lengths
+    num_images = len(test_generator.filenames)
     assert len(y_test_pred) == num_images
+    assert len(y_test_true) == num_images
 
-    # Plot image_files with pred/true_test labels  
-    pred_v_pred_true_labels = [ f"{y_test_pred[i]}[{i}]/{y_test_true[i]}[{i}]" for i in range(num_images) ]
-    pred_v_true_filenames = x_test_true
-    plot_idxed_imagefiles_with_labels("pred vs true labels", pred_v_true_filenames, pred_v_true_labels, test_idx)
+    pred_labels = [idx_to_label_map[idx] for idx in y_test_pred]
+    true_labels = [idx_to_label_map[idx] for idx in y_test_true]
+    
+    # Use the test_idx to plot image_files with pred/true_test labels  
+    test_idx = generate_random_plot_idx(test_generator)
+    pred_v_true_labels = [ f"{pred_labels[i]}[{i}]/{true_labels[i]}[{i}]" for i in range(num_images) ]
+    true_filenames = X_test_true
+    plot_idxed_imagefiles_with_labels("pred vs true labels", true_filenames, pred_v_true_labels, test_idx)
 
-    # Plot the confusion matrix  of pred vs true
-    pred_true_display_labels = labels
-    cm = confusion_matrix(y_test_pred, y_test_true)
+    # Plot the confusion matrix of pred vs true labels
+    cm = confusion_matrix(y_test_true, y_test_pred)
     disp = ConfusionMatrixDisplay(
         confusion_matrix=cm, 
-        display_labels=pred_true_display_labels)
+        display_labels=labels)
     disp.plot(cmap=plt.cm.Blues)
-    print(f"Showing confusion matrix pred vs true labels")
-    print(f"Click key or mouse in window to close.")
+    logger.info('showing Confusion Matrix of pred vs true labels')
+    logger.info(f"Click key or mouse in window to close.")
     plt.waitforbuttonpress()
     plt.close("all")
     plt.show(block=False)
 
+def run_tests():
+    logger.info("run_tests() not yet implementated")
+
 def main():
+    # usage:
+    # python cnn_image_classification.py ( run | test | latest | img-plots-only | <model_dir_path> )
+
+    model = None
+    img_plots_only = False
+    model_dir_path = None
+    if len(sys.argv) > 1:
+        argv1 = sys.argv[1]
+        if argv1 == 'run':
+            pass
+        elif argv1 == 'test':
+            run_tests()
+            return
+        elif argv1 == 'latest':
+            model = load_latest_model()
+            if model is None:
+                logger.info("no latest model_dir_path found")
+                logger.info("exiting now")
+                return
+        elif argv1 == 'img-plots-only':
+            img_plots_only = True 
+        else:
+            model_dir_path = argv1
+            model = load_model(model_dir_path)
+            if model is None:
+                raise Exception(f"load_model({model_dir_path}) failed")
 
     CSV_DATA_FILE = "../csv-data/S01E01-S01E02-data.csv"
     SRC_IMGS_DIR = "../src-images/"
-    MODELS_DIR = "./models/"
+    MODELS_ROOT_DIR = "./models/"
 
     LABELS = ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'] 
     LABEL_TO_IDX_MAP = { 'Junk':0, 'Common':1, 'Uncommon':2, 'Rare':3, 'Legendary':4 }
@@ -416,12 +420,10 @@ def main():
     TARGET_SIZE=(IMAGE_HEIGHT,IMAGE_WIDTH)
 
     BATCH_SIZE = 32
-    EPOCHS = 50
+    EPOCHS = 1
     DATA_SPLITS = {'train_size':0.70, 'valid_size':0.20, 'test_size':0.10}
     LEARNING_RATE = 0.0001
     
-    PLOT_RANDOM_IMAGES = False
-
     (generators, label_weights_by_idx) = create_generators(
         csv_data_file=CSV_DATA_FILE, 
         src_imgs_dir=SRC_IMGS_DIR,
@@ -431,35 +433,32 @@ def main():
         frame_subsample_rate=FRAME_SUBSAMPLE_RATE,
         batch_size=BATCH_SIZE,
         target_size=TARGET_SIZE,
-        plot_random_images=PLOT_RANDOM_IMAGES)
-
+        plot_random_images=img_plots_only)
+    
     (train_generator, valid_generator, test_generator, true_test_generator) = generators
 
-    model = create_model(
-        target_size=TARGET_SIZE,
-        learning_rate=LEARNING_RATE,
-        labels=LABELS) 
+    # return early if img_plots_only is True
+    if img_plots_only:
+        return
 
-    model = fit_model(
-        model=model,
-        train_generator=train_generator,
-        valid_generator=valid_generator,
-        class_weights_by_idx=label_weights_by_idx,
-        epochs=EPOCHS)
+    # train/fit the model only if model is None
+    if model is None:
+        model = create_model(
+            target_size=TARGET_SIZE,
+            learning_rate=LEARNING_RATE,
+            labels=LABELS) 
 
-    #----------- save/load test ----------------#
-    pre_saved_score = quick_evaluate_model(
-        model, "valid_generator", valid_generator)
+        model = fit_model(
+            model=model,
+            train_generator=train_generator,
+            valid_generator=valid_generator,
+            class_weights_by_idx=label_weights_by_idx,
+            epochs=EPOCHS)
 
-    save_model( models_root_dir=MODELS_ROOT_DIR, model=model)
-    
-    saved_model = load_latest_model(models_root_dir)
-
-    saved_score = quick_evaluate_model(
-        saved_model, "valid_generator", valid_generator)
-
-    assert saved_score == pre_saved_score
-    #----------- save/load test ----------------#
+        model_dir_path = save_model(MODELS_ROOT_DIR, model)
+        logger.info(f"saved model to model_dir_path: {model_dir_path}")
+        loaded_model = load_latest_model(MODELS_ROOT_DIR)
+        assert models_are_equivalent(model, loaded_model)
 
     evaluate_model(
         model=model,
