@@ -21,14 +21,13 @@ import pandas as pd
 import numpy as np
 import os
 import sys
-import datetime
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import tensorflow as tf
 
 from keras.models import Sequential
 from keras.preprocessing.image import ImageDataGenerator
-from keras.layers import Input, Dense, Activation, Flatten, Dropout, BatchNormalization
+from keras.layers import Input, Dense, Activation, Flatten, Dropout
 from keras.layers import Conv2D, MaxPooling2D
 
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
@@ -73,7 +72,7 @@ def create_generators(
     data_df = pd.read_csv(csv_data_file, header=None, dtype=str, names=['filename','label'])
     logger.info(f"data_df.len: {len(data_df)}")
 
-    # counts of each label before frame_subsampling
+    # counts and weights of each label before frame_subsampling
     y_counts = data_df['label'].value_counts()
     total_label_weights_by_label = max(y_counts)/y_counts
 
@@ -83,7 +82,7 @@ def create_generators(
         logger.info(f"data_df.len: {len(data_df)} subsampled")
 
     # the number of samples used, N, must be 
-    # divisible by the test batch_size and by the validation split
+    # divisible by the test batch_size and by the validation splits
     N = len(data_df)
     N = (N // batch_size) * batch_size
 
@@ -98,9 +97,11 @@ def create_generators(
     X_data = data_df['filename'].to_list()
     y_data = data_df['label'].to_list()
 
+    # convert X_data filenames to absolute paths
+    X_data = [os.path.join(src_imgs_dir, f) for f in X_data]
+
     # do our own label-to-int categorization on the incoming labels
-    # so we can use 
-    # class_mode 'raw'  and 
+    # so we can use class_mode 'raw'  and  
     # loss function 'sparse_categorical_crossentropy'
     y_data = [label_to_idx_map[label] for label in y_data]
 
@@ -109,8 +110,8 @@ def create_generators(
     assert idx_to_label_map is not None
     label_weights_by_idx = {idx:total_label_weights_by_label[idx_to_label_map[idx]] for idx in idx_to_label_map.keys()}
 
-    # validation and test data are shuffled only at start
-    # training set is shuffled on each epocn
+    # valid and test data are shuffled only at start
+    # training set is shuffled on each epoch
 
     # create indices with percentages over N
     train_idx, valid_idx, test_idx = triple_shuffle_split(
@@ -118,7 +119,7 @@ def create_generators(
         data_splits=data_splits, 
         random_state=123)
 
-    # prepare for indexing
+    # prepare for triple_shuffle_split indexing
     X_data = np.array(X_data)
     y_data = np.array(y_data)
 
@@ -131,11 +132,16 @@ def create_generators(
 
     X_test = pd.Series(X_data[test_idx], name='filename')
     y_test = pd.Series(y_data[test_idx], name='label', dtype='float64')
+    
+    # true is a duplicate of test
+    X_true = pd.Series(X_data[test_idx], name='filename')
+    y_true = pd.Series(y_data[test_idx], name='label', dtype='float64')
 
     # concat X and y series horizontally to create dataframes
     train_df = pd.concat([X_train, y_train], axis=1)
     valid_df = pd.concat([X_valid,y_valid], axis=1)
     test_df = pd.concat([X_test,y_test], axis=1)
+    true_df = pd.concat([X_true,y_true], axis=1)
 
     assert len(train_df) + len(valid_df) + len(test_df) == N
 
@@ -150,14 +156,13 @@ def create_generators(
 
     train_generator = datagen.flow_from_dataframe(
         dataframe=train_df,
-        directory=src_imgs_dir,
+        directory=None, # filenames are already paths
         x_col="filename",
         y_col="label",
         subset=None,
         batch_size=batch_size,
         seed=42,
         shuffle=False,
-        drop_duplicates=False, # not needed
         validate_filenames=False, # not needed
         class_mode="raw", # even though we've done our own categorization?
         interpolation="box",  # prevents antialiasing if subsampling
@@ -174,7 +179,7 @@ def create_generators(
 
     valid_generator = datagen.flow_from_dataframe(
         dataframe=valid_df,
-        directory=src_imgs_dir,
+        directory=None, # filenames are already paths
         x_col="filename",
         y_col="label",
         subset=None,
@@ -182,7 +187,6 @@ def create_generators(
         seed=42,
         shuffle=False,
         steps_per_epoch=None, # no shuffle if not None
-        drop_duplicates=False, # not needed
         validate_filenames=False, # not needed
         class_mode="raw",
         interpolation="box",
@@ -202,18 +206,19 @@ def create_generators(
     # image filenames no labels
     test_generator = test_datagen.flow_from_dataframe(
         dataframe=test_df,
-        directory=src_imgs_dir,
+        directory=None, # filenames are already paths
         x_col="filename",
         y_col=None, # images only
-        batch_size=batch_size,
+        batch_size=test_df.shape[0], # all available frames
         seed=42,
         shuffle=False, # not needed for testing
-        drop_duplicates=False, # not needed
         validate_filenames=False, # not needed
         class_mode=None, # images only
         interpolation="box",
         target_size=target_size)
 
+    re_X_test = test_generator.next()
+  
     test_plot_idx = generate_random_plot_idx(test_generator)
 
     if plot_random_images:
@@ -222,29 +227,32 @@ def create_generators(
             test_plot_idx)
 
     # image filenames with labels
-    true_test_generator = test_datagen.flow_from_dataframe(
+    true_generator = test_datagen.flow_from_dataframe(
         dataframe=test_df,
-        directory=src_imgs_dir,
+        directory=None, # filenames are already paths
         x_col="filename",
         y_col="label",
-        batch_size=batch_size,
+        batch_size=test_df.shape[0], # all frames
         seed=42,
         shuffle=False, # not needed for testing
-        drop_duplicates=False, # not needed
         validate_filenames=False, # not needed
         class_mode="raw",
         interpolation="box",
         target_size=target_size)
 
-    assert true_test_generator.filenames == test_generator.filenames
+    re_X_true, re_y_true = true_generator.next()
+    
+    assert np.array_equal(true_generator.filenames, test_generator.filenames)
+    assert np.array_equal(re_X_true, re_X_test)
+    assert np.array_equal(re_y_true, test_df['label'])
 
     if plot_random_images:
         plot_idxed_generator_images(
-            "true_test", true_test_generator, 
+            "true", true_generator, 
             test_plot_idx, idx_to_label_map)
 
-    generators = (train_generator, valid_generator, test_generator, true_test_generator)
-    return  (generators, label_weights_by_idx)
+    generators = (train_generator, valid_generator, test_generator)
+    return  (generators, true_df, label_weights_by_idx)
 
 
 def create_model(
@@ -252,10 +260,6 @@ def create_model(
     learning_rate, 
     labels): 
     
-    assert target_size is not None
-    assert learning_rate is not None
-    assert labels is not None
-
     # https://datascience.stackexchange.com/a/24524
 
     model = Sequential()
@@ -303,8 +307,10 @@ def fit_model(
     class_weights_by_idx,
     epochs):
     
-    step_size_train=train_generator.n//train_generator.batch_size
     step_size_valid=valid_generator.n//valid_generator.batch_size
+
+    # step_size_train is not used because train is shuffled before each epoch
+    # step_size_train=train_generator.n//train_generator.batch_size 
 
     # update the model so that model(train) gradually matches model(valid)
     model.fit(
@@ -328,52 +334,39 @@ def quick_evaluate_model(
 
 def evaluate_model(
     model,
-    valid_generator,
     test_generator,
-    true_test_generator,
+    true_df,
     idx_to_label_map,
     labels):
 
-    logger.info('Classification Report ')
-
-    # use the model to get y_idx predictions for each image in the test dataset
-    Y_test_pred = model.predict(test_generator) # each image has NUM_CLASSES [0..1] prediction probabilities
-    y_test_pred = np.argmax(Y_test_pred, axis=1) # each image has a class index with the highest prediction probability
-
-    # This passes 231 == 231
-    assert len(test_generator.filenames) == len(true_test_generator.filenames)
-
-    # get the true filenames (X_test_true) and true idx (y_test_true) from the true test dataset
-    X_test_true, y_test_true = next(true_test_generator)
-    # !! X_test_true and y_test_true have lengths of only 32! 
-    # Note that true_test_generator.reset() has no effect.
-    # Could it be that its only 32 because only 
-    # the first batch of 32 has been run?
-
-    # assert that y_test_pred idx and y_test_true idx have the same lengths
-    num_images = len(test_generator.filenames)
-    assert len(y_test_pred) == num_images
-
-    # THIS FAILS - 32 != 231
-    assert len(y_test_true) == num_images
-
-    # convert idx to labels
-    pred_labels = [idx_to_label_map[idx] for idx in y_test_pred]
-    true_labels = [idx_to_label_map[idx] for idx in y_test_true]
+    # use the model to get len(LABELS) prediction probabilities in [0..1) for each image
+    Y_pred = model.predict(test_generator) #
     
-    # Use the test_idx to plot image_files with pred/true_test labels  
-    test_idx = generate_random_plot_idx(test_generator)
-    pred_v_true_labels = [ f"{pred_labels[i]}[{i}]/{true_labels[i]}[{i}]" for i in range(num_images) ]
-    true_filenames = X_test_true
-    plot_idxed_imagefiles_with_labels("pred vs true labels", true_filenames, pred_v_true_labels, test_idx)
+    # keep only the highest prediction value for each image
+    y_pred = np.argmax(Y_pred, axis=1) 
 
-    # compute and display the confusion matrix of pred vs true labels
-    cm = confusion_matrix(y_test_true, y_test_pred)
-    disp = ConfusionMatrixDisplay(
-        confusion_matrix=cm, 
-        display_labels=labels)
+    # convert y_pred idx values into y_pred labels and compare length of y_true
+    pred_labels = [idx_to_label_map[i] for i in y_pred]
+    y_true = true_df['label']
+    true_labels = [idx_to_label_map[i] for i in y_true]
+    assert len(pred_labels) == len(true_labels)
+
+    # pull X_pred filesnames
+    pred_filenames = test_generator.filenames
+    true_filenames = true_df['filename']
+    assert np.array_equal(pred_filenames, true_filenames)
+    num_files = len(true_filenames)
+    
+    # Use the test_idx to plot image_files with true/pred labels  
+    test_idx = generate_random_plot_idx(test_generator)
+    true_v_pred_labels = [ f"{true_labels[i]}/{pred_labels[i]}" for i in range(num_files) ]
+    plot_idxed_image_files_with_labels(None, true_filenames, true_v_pred_labels, test_idx)
+
+    # compute and display the confusion matrix of true vs pred labels
+    cm = confusion_matrix(true_labels, pred_labels)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
     disp.plot(cmap=plt.cm.Blues)
-    logger.info('showing Confusion Matrix of pred vs true labels')
+    logger.info('showing Confusion Matrix of true vs pred labels')
     logger.info(f"Click key or mouse in window to close.")
     plt.waitforbuttonpress()
     plt.close("all")
@@ -433,7 +426,7 @@ def main():
     DATA_SPLITS = {'train_size':0.70, 'valid_size':0.20, 'test_size':0.10}
     LEARNING_RATE = 0.0001
     
-    (generators, label_weights_by_idx) = create_generators(
+    (generators, true_df, label_weights_by_idx) = create_generators(
         csv_data_file=CSV_DATA_FILE, 
         src_imgs_dir=SRC_IMGS_DIR,
         label_to_idx_map = LABEL_TO_IDX_MAP,
@@ -444,7 +437,7 @@ def main():
         target_size=TARGET_SIZE,
         plot_random_images=img_plots_only)
     
-    (train_generator, valid_generator, test_generator, true_test_generator) = generators
+    (train_generator, valid_generator, test_generator) = generators
 
     # return early if img_plots_only is True
     if img_plots_only:
@@ -463,19 +456,21 @@ def main():
             valid_generator=valid_generator,
             class_weights_by_idx=label_weights_by_idx,
             epochs=EPOCHS)
-
+        
         model_dir_path = save_model(MODELS_ROOT_DIR, model)
         logger.info(f"saved model to model_dir_path: {model_dir_path}")
         loaded_model = load_latest_model(MODELS_ROOT_DIR)
         assert models_are_equivalent(model, loaded_model)
 
+
     evaluate_model(
-        model=model,
-        valid_generator=valid_generator,
-        test_generator=test_generator,
-        true_test_generator=true_test_generator,
+        model,
+        test_generator,
+        true_df,
         idx_to_label_map=IDX_TO_LABEL_MAP,
         labels=LABELS)
 
 if __name__ == '__main__':
-    main()
+    with tf.device('/GPU'):
+        main()
+        logger.info("done")

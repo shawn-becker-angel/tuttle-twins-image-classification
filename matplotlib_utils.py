@@ -24,6 +24,13 @@ def get_unique_random_ints(minVal: int, maxVal: int, N: int):
     np.random.shuffle(rint)
     return rint
 
+def get_random_ints(minVal: int, maxVal: int, N: int):
+    rints = list(range(N))
+    np.random.shuffle(rints)
+    buckets = list(range(minVal,maxVal))
+    vals = [rints[i]/bucket[i]]
+    return rint
+
 def generate_random_plot_idx(generator):
     N = generator.n
     if N < 1:
@@ -45,15 +52,17 @@ def plot_idxed_image_files_with_labels(name, image_files, labels, plot_idx):
         i = plot_idx[n]
         plt.subplot(3,4,n+1)
         image = cv2.imread(image_files[i])
+        image = cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
         plt.imshow(image)   
         plt.axis('off')
-        plt.title(f"{name}[{i}]: {labels[i]}")
-    print(f"Showing {N} {name} images and labels")
+        title = f"{name}[{i}]: {labels[i]}" if name is not None else labels[i]
+        plt.title(title)
+    name_cnt =  f"{N} {name}" if name is not None else f"{N}"
+    print(f"Showing {name_cnt} images and labels")
     wait_for_click()
 
 def plot_idxed_generator_images(name, generator, plot_idx, idx_to_label_map=None):
     assert len(plot_idx) > 0, "ERROR: empty plot_idx"
-    generator.reset()
     if idx_to_label_map is not None:
         X, y = generator.next()
     else:
@@ -77,28 +86,6 @@ def plot_idxed_generator_images(name, generator, plot_idx, idx_to_label_map=None
     legend = "images only" if y is None else "images and labels"
     print(f"Showing {N} {name} {legend}")
         
-    wait_for_click()
-
-
-
-
-def plot_confusion_matrix(labels, y_pred, y_test):
-
-    from sklearn.metrics import ConfusionMatrixDisplay
-    from sklearn.metrics import confusion_matrix
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    print('Confusion Matrix')
-    # confusion_matrix(validation_generator.classes, y_pred)
-    print('Classification Report')
-    target_names = labels
-    # classification_report(validation_generator.classes, y_pred, target_names=target_names)
-
-    cm = confusion_matrix(y_test, y_pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
-    disp.plot(cmap=plt.cm.Blues)
-    plt.show()
     wait_for_click()
 
 def plot_histogram(title: str='Title', data: List[float]=[], with_normal: bool=True):
@@ -146,6 +133,13 @@ def test_plot_rand_int_histogram():
         print(f"ERROR: maxS:{maxS} not < maxVal:{maxVal}")
     plot_histogram(title="randint distribution", data=s )
 
+def test_compute_and_plot_confusion_matrix():
+    true_labels = list(range(10)) * 1000
+    random.shuffle(true_labels)
+    pred_labels = list(range(10)) * 1000
+    random.shuffle(pred_labels)
+    compute_and_plot_confusion_matrix(true_labels, pred_labels)  
+
 #==============================================
 # MAIN
 #==============================================
@@ -153,4 +147,5 @@ def test_plot_rand_int_histogram():
 if __name__ == "__main__":
     test_plot_gamma_histogram()
     test_plot_rand_int_histogram()
+    test_compute_and_plot_confusion_matrix()
     print("done")
