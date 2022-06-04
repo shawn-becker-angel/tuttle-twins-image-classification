@@ -7,6 +7,7 @@
 
 
 
+
         {
             "name": "Debug Current File",
             "type": "python",
@@ -35,7 +36,6 @@
             "args": ["run"],
             "console": "integratedTerminal",
             "justMyCode": false,
-            "stopOnEntry": true,
          },
          {
             "name": "Debug 'cnn test'",
@@ -47,7 +47,6 @@
             "args": ["test"],
             "console": "integratedTerminal",
             "justMyCode": false,
-            "stopOnEntry": true,
          },
          {
             "name": "Debug 'cnn latest'",
@@ -59,7 +58,6 @@
             "args": ["latest"],
             "console": "integratedTerminal",
             "justMyCode": false,
-            "stopOnEntry": true,
          },
          {
             "name": "Debug 'cnn img-plots-only'",
@@ -71,7 +69,6 @@
             "args": ["img-plots-only"],
             "console": "integratedTerminal",
             "justMyCode": false,
-            "stopOnEntry": true,
          },
     ]
 }

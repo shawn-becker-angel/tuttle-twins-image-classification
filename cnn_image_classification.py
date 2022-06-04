@@ -17,10 +17,12 @@
 # Import from keras_preprocessing not from keras.preprocessing
 # see https://vijayabhaskar96.medium.com/tutorial-on-keras-flow-from-dataframe-1fd4493d237c
 
-import pandas as pd
 import numpy as np
 import os
 import sys
+import datetime
+import pandas as pd
+
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import tensorflow as tf
@@ -46,6 +48,9 @@ import model_file_utils
 import logging
 logging.basicConfig(level = logging.INFO)
 logger = logging.getLogger("cnn_image_classification")
+
+import tensorflow as tf
+
 
 # verify availability of GPU
 tf.config.list_physical_devices()
@@ -243,6 +248,11 @@ def create_generators(
         plot_idxed_generator_images(
             "true", true_generator, 
             test_plot_idx, idx_to_label_map)
+    
+    # batch_cnt = 0
+    # for batch_idx, (x, y) in enumerate(train_generator):
+    #     batch_cnt += 1
+    # print(batch_cnt)
 
     generators = (train_generator, valid_generator, test_generator)
     return  (generators, true_df, label_weights_by_idx)
@@ -253,7 +263,8 @@ def create_generators(
 
 def create_model(
     target_size,
-    learning_rate, 
+    dropout1,
+    dropout2,
     labels): 
     
     # https://datascience.stackexchange.com/a/24524
@@ -265,33 +276,20 @@ def create_model(
     model.add(Conv2D(32, (3, 3)))
     model.add(Activation('relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Dropout(0.25))
+    model.add(Dropout(dropout1))
 
     model.add(Conv2D(64, (3, 3), padding='same'))
     model.add(Activation('relu'))
     model.add(Conv2D(64, (3, 3)))
     model.add(Activation('relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Dropout(0.25))
+    model.add(Dropout(dropout1))
 
     model.add(Flatten())
     model.add(Dense(512))
     model.add(Activation('relu'))
-    model.add(Dropout(0.5))
+    model.add(Dropout(dropout2))
     model.add(Dense(len(labels), activation='softmax'))
-
-    optimizer = tf.keras.optimizers.RMSprop(
-        learning_rate=learning_rate,
-        rho=0.9,
-        momentum=0.0,
-        epsilon=1e-07,
-        centered=False,
-    )
-
-    model.compile(
-        optimizer,
-        loss="sparse_categorical_crossentropy", 
-        metrics=["accuracy"])
     
     return model
 
@@ -300,30 +298,112 @@ def create_model(
 #------------ <fit_model> --------------#
 
 def fit_model(
-    model,
     train_generator,
     valid_generator,
     label_weights_by_idx,
+    target_size, 
+    dropout1,
+    dropout2,
+    labels,
     epochs):
     
-    logging.info(f"fitting model in {epochs} epochs")
-    
-    step_size_valid=valid_generator.n//valid_generator.batch_size
+    from tensorflow import keras
+        
+    loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+    acc_metric = keras.metrics.SparseCategoricalAccuracy()
+    train_writer = tf.summary.create_file_writer("logs/train/")
+    valid_writer = tf.summary.create_file_writer("logs/valid/")
+    train_step = test_step = 0
 
-    # step_size_train is not used because train is shuffled before each epoch
-    # step_size_train=train_generator.n//train_generator.batch_size 
+    num_epochs = epochs
+    for lr in [1e-1, 1e-2, 1e-3, 1e-4, 1e-5]:
+        train_step = test_step = 0
+        train_writer = tf.summary.create_file_writer("logs/train/" + str(lr))
+        valid_writer = tf.summary.create_file_writer("logs/valid/" + str(lr))
+        model = create_model(target_size, dropout1, dropout2, labels)
+        
+        # see https://keras.io/api/optimizers/adam/
+        optimizer = keras.optimizers.Adam(
+            learning_rate=lr, # EXPERIMENTAL with [1e-1, 1e-2, 1e-3, 1e-4, 1e-5]
+            beta_1=0.9, # The exponential decay rate for the 1st moment estimates.
+            beta_2=0.999, # The exponential decay rate for the 2nd moment estimates
+            epsilon=1e-07, # could be EXPERIMENTAL with [1e-7, 1e-1, 1e-0]
+            amsgrad=False)
 
-    # update the model so that model(train) gradually matches model(valid)
-    history = model.fit(
-        train_generator,
-        shuffle=True, # shuffle before each epoch
-        steps_per_epoch=None, # no shuffle if not None
-        validation_data=valid_generator,
-        validation_steps=step_size_valid,
-        class_weight=label_weights_by_idx,
-        epochs=epochs)
+        for epoch in range(num_epochs):
+            # Iterate through training set
+            for batch_idx, (x, y) in enumerate(train_generator):
+                with tf.GradientTape() as tape:
+                    y_pred = model(x)
+                    loss = loss_fn(y, y_pred)
+
+                gradients = tape.gradient(loss, model.trainable_weights)
+                optimizer.apply_gradients(zip(gradients, model.trainable_weights))
+                acc_metric.update_state(y, y_pred)
+
+                with train_writer.as_default():
+                    tf.summary.scalar("Loss", loss, step=train_step)
+                    tf.summary.scalar(
+                        "Accuracy", acc_metric.result(), step=train_step,
+                    )
+                    train_step += 1
+
+            # Reset accuracy in between epochs (and for testing and test)
+            acc_metric.reset_states()
+
+            # Iterate through validator set
+            for batch_idx, (x, y) in enumerate(valid_generator):
+                y_pred = model(x)
+                loss = loss_fn(y, y_pred)
+                acc_metric.update_state(y, y_pred)
+
+                with valid_writer.as_default():
+                    tf.summary.scalar("Loss", loss, step=test_step)
+                    tf.summary.scalar(
+                        "Accuracy", acc_metric.result(), step=test_step,
+                    )
+                    test_step += 1
+
+            acc_metric.reset_states()
+
+        # Reset accuracy in between epochs (and for testing and validate)
+        acc_metric.reset_states()
+
+    # optimizer = tf.keras.optimizers.RMSprop(
+    #     learning_rate=learning_rate,
+    #     rho=0.9,
+    #     momentum=0.0,
+    #     epsilon=1e-07,
+    #     centered=False,
+    # )
+
+    # model.compile(
+    #     optimizer,
+    #     loss="sparse_categorical_crossentropy", 
+    #     metrics=["accuracy"])
     
-    plot_model_fit_history(history)
+    # logging.info(f"fitting model in {epochs} epochs")
+    
+    # step_size_valid=valid_generator.n//valid_generator.batch_size
+
+    # # step_size_train is not used because train is shuffled before each epoch
+    # # step_size_train=train_generator.n//train_generator.batch_size 
+
+    # log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    # tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+
+    # # update the model so that model(train) gradually matches model(valid)
+    # history = model.fit(
+    #     train_generator,
+    #     shuffle=True, # shuffle before each epoch
+    #     steps_per_epoch=None, # no shuffle if not None
+    #     validation_data=valid_generator,
+    #     validation_steps=step_size_valid,
+    #     class_weight=label_weights_by_idx,
+    #     callbacks=[tensorboard_callback],
+    #     epochs=epochs)
+    
+    # plot_model_fit_history(history)
     
     return model
 
@@ -420,6 +500,8 @@ def run_pipeline(params):
     batch_size = params['batch_size']
     learning_rate = params['learning_rate']
     epochs = params['epochs']
+    dropout1 = params['dropout1']
+    dropout2 = params['dropout2']
     plot_random_images = params['plot_random_images']
     image_plots_only = params['image_plots_only']
     model = params['model']
@@ -452,18 +534,17 @@ def run_pipeline(params):
     
     # train/fit the model only if model is None
     if model is None:
-        model = create_model(
-            target_size,
-            learning_rate,
-            labels) 
 
         model = fit_model(
-            model,
             train_generator,
             valid_generator,
             label_weights_by_idx,
+            target_size, 
+            dropout1,
+            dropout2,
+            labels,
             epochs)
-        
+
         model_dir_path = save_model(
             model, 
             models_root_dir)
@@ -537,10 +618,12 @@ def main():
         "frame_subsample_rate" : 24,
         "image_scale_factor" : 0.5,
         "batch_size" : 32,
+        "dropout1" : 0.25,
+        "dropout2" : 0.5,
         "epochs" : 1,
         "data_splits" : {'train_size':0.70, 'valid_size':0.20, 'test_size':0.10},
         "learning_rate" : 0.0001,
-        "plot_random_images" : True,
+        "plot_random_images" : False,
         "image_plots_only" : image_plots_only,
         "model" : model
     }
