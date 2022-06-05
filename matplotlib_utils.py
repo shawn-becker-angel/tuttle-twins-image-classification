@@ -111,17 +111,24 @@ def plot_histogram(title: str='Title', data: List[float]=[], with_normal: bool=T
 def plot_model_fit_history(history):
     # see https://machinelearningmastery.com/display-deep-learning-model-training-history-in-keras/
     
-    # list all data in history
+    # list all metrics in history
     print(history.history.keys())
-    # summarize history for accuracy
-    plt.plot(history.history['accuracy'])
-    plt.plot(history.history['val_accuracy'])
+    
+    num_epochs = len(history.history['Accuracy'])
+    if num_epochs < 2:
+        print("skipping plot_model_fit_history() since num_epochs is less than 2")
+        return
+    
+    # plot accuracy metrics per epoch (each metric must be in history.history.keys)
+    plt.plot(history.history['Accuracy'])
+    plt.plot(history.history['val_Accuracy'])
     plt.title('model accuracy')
     plt.ylabel('accuracy')
     plt.xlabel('epoch')
     plt.legend(['train', 'test'], loc='upper left')
     plt.show()
-    # summarize history for loss
+    
+    # plot loss metrics per epoch (each metric must be in history.history.keys)
     plt.plot(history.history['loss'])
     plt.plot(history.history['val_loss'])
     plt.title('model loss')

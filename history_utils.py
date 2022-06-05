@@ -8,6 +8,7 @@ from matplotlib_utils import wait_for_click
 import pandas as pd
 
 def save_history(filename, history):
+    print("saving history")
     '''
     Saves history object to a json_file
     named <filename>-<datetime>.json
@@ -51,6 +52,7 @@ def cleanup_filename(filename):
     return re.sub(pattern,'-', filename)
 
 def load_history(json_file_path: "PathLike[str]"):
+    print("loading history")
     '''Returns the loaded history or None if load failed'''
     try:
         df = pd.read_json(json_file_path)
@@ -61,6 +63,7 @@ def load_history(json_file_path: "PathLike[str]"):
     return None
 
 def plot_history(name: str, history) -> None:
+    print("plotting history")
     acc = history.history['accuracy']
     val_acc = history.history['val_accuracy']
 
