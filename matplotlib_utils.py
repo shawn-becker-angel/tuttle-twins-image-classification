@@ -24,13 +24,6 @@ def get_unique_random_ints(minVal: int, maxVal: int, N: int):
     np.random.shuffle(rint)
     return rint
 
-def get_random_ints(minVal: int, maxVal: int, N: int):
-    rints = list(range(N))
-    np.random.shuffle(rints)
-    buckets = list(range(minVal,maxVal))
-    vals = [rints[i]/bucket[i]]
-    return rint
-
 def generate_random_plot_idx(generator):
     N = generator.n
     if N < 1:
@@ -127,6 +120,8 @@ def plot_model_fit_history(history):
     plt.xlabel('epoch')
     plt.legend(['train', 'test'], loc='upper left')
     plt.show()
+    print("Showing accuracy metrics per epoch")
+    wait_for_click()
     
     # plot loss metrics per epoch (each metric must be in history.history.keys)
     plt.plot(history.history['loss'])
@@ -136,6 +131,7 @@ def plot_model_fit_history(history):
     plt.xlabel('epoch')
     plt.legend(['train', 'test'], loc='upper left')
     plt.show()
+    print("Showing lost metrics per epoch")
     wait_for_click()
 
 

@@ -20,12 +20,12 @@
 import logging
 import model_file_utils
 from shuffle_utils import triple_shuffle_split
-from history_utils import plot_history, save_history
 from matplotlib_utils import \
     plot_idxed_generator_images, \
     plot_idxed_image_files_with_labels, \
     generate_random_plot_idx, \
-    plot_model_fit_history
+    plot_model_fit_history, \
+    wait_for_click
 from matplotlib import pyplot as plt
 import matplotlib
 from PIL import Image
@@ -364,10 +364,12 @@ def fit_model(
     # step_size_train is not used because train is shuffled before each epoch
     # step_size_train=train_generator.n//train_generator.batch_size 
 
-    log_dir = "tensorboard-logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    dt = datetime.datetime.utcnow().isoformat()
+    
+    tensor_log_dir = "tensorboard-logs/fit/" + dt
     tensorboard_callback = tf.keras.callbacks.TensorBoard(
-        log_dir=log_dir, histogram_freq=1)
-
+        log_dir=tensor_log_dir, histogram_freq=1, update_freq="epoch")
+    
     # update the model so that model(train) gradually matches model(valid)
     history = model.fit(
         train_generator,
@@ -503,12 +505,9 @@ def evaluate_model(
     cm = confusion_matrix(true_labels, pred_labels)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm)
     disp.plot(cmap=plt.cm.Blues)
-    logger.info('showing Confusion Matrix of true vs pred labels')
-    logger.info(f"Click key or mouse in window to close.")
-    plt.waitforbuttonpress()
-    plt.close("all")
-    plt.show(block=False)
-
+    print('Showing Confusion Matrix of true vs pred labels')
+    wait_for_click()
+    
 #------------ </evaluatemodel> --------------#
 
 
@@ -667,7 +666,7 @@ def main():
         "batch_size": 32,
         "dropout1": 0.25,
         "dropout2": 0.5,
-        "epochs": 2,
+        "epochs": 30,
         "data_splits": {'train_size': 0.70, 'valid_size': 0.20, 'test_size': 0.10},
         "learning_rate": 0.0001,
         "plot_random_images": False,
