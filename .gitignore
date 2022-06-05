@@ -1,5 +1,5 @@
 # Byte-compiled / optimized / DLL files
-__pycache__/
+__pycache__
 *.py[cod]
 *$py.class
 
@@ -17,21 +17,21 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
-*.egg-info/
+build
+develop-eggs
+dist
+downloads
+eggs
+.eggs
+lib
+lib64
+parts
+sdist
+var
+wheels
+pip-wheel-metadata
+share/python-wheels
+*.egg-info
 .installed.cfg
 *.egg
 MANIFEST
@@ -47,9 +47,9 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
+htmlcov
+.tox
+.nox
 .coverage
 .coverage.*
 .cache
@@ -57,8 +57,8 @@ nosetests.xml
 coverage.xml
 *.cover
 *.py,cover
-.hypothesis/
-.pytest_cache/
+.hypothesis
+.pytest_cache
 
 # Translations
 *.mo
@@ -71,7 +71,7 @@ db.sqlite3
 db.sqlite3-journal
 
 # Flask stuff:
-instance/
+instance
 .webassets-cache
 
 # Scrapy stuff:
@@ -81,7 +81,7 @@ instance/
 docs/_build/
 
 # PyBuilder
-target/
+target
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -113,13 +113,13 @@ celerybeat.pid
 # Environments
 .env
 .venv
-env/
-venv/
-venv-*/
-ENV/
-env.bak/
-venv.bak/
-venv/
+env
+venv
+venv-*
+ENV
+env.bak
+venv.bak
+venv
 
 # Spyder project settings
 .spyderproject
@@ -141,7 +141,7 @@ dmypy.json
 
 .DS_Store
 
-credentials/
+credentials
 .DS_Store
 
 keep
