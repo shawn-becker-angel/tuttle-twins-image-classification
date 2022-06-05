@@ -144,9 +144,7 @@ dmypy.json
 credentials/
 .DS_Store
 
-# scratch code
-keep/
-
+keep
 logs
-tensorboard-logs/
-models/
+tensorboard-logs
+models
