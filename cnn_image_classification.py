@@ -364,7 +364,7 @@ def fit_model(
     # step_size_train is not used because train is shuffled before each epoch
     # step_size_train=train_generator.n//train_generator.batch_size 
 
-    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = "tensorboard-logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     tensorboard_callback = tf.keras.callbacks.TensorBoard(
         log_dir=log_dir, histogram_freq=1)
 

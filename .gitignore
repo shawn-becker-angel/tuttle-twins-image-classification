@@ -147,5 +147,5 @@ credentials/
 # scratch code
 keep/
 
-logs/*
+tensorboard-logs/*
 models/
