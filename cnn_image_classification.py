@@ -506,6 +506,8 @@ def evaluate_model(
     disp = ConfusionMatrixDisplay(confusion_matrix=cm)
     disp.plot(cmap=plt.cm.Blues)
     print('Showing Confusion Matrix of true vs pred labels')
+    print("idx_to_label_map:", idx_to_label_map)
+          
     wait_for_click()
     
 #------------ </evaluatemodel> --------------#
@@ -661,12 +663,12 @@ def main():
         "models_root_dir": "./models/",
         "labels": ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'],
         "label_to_idx_map": {'Junk': 0, 'Common': 1, 'Uncommon': 2, 'Rare': 3, 'Legendary': 4},
-        "frame_subsample_rate": 24,
-        "image_scale_factor": 0.5,
+        "frame_subsample_rate": 12,
+        "image_scale_factor": 0.75,
         "batch_size": 32,
         "dropout1": 0.25,
         "dropout2": 0.5,
-        "epochs": 30,
+        "epochs": 40,
         "data_splits": {'train_size': 0.70, 'valid_size': 0.20, 'test_size': 0.10},
         "learning_rate": 0.0001,
         "plot_random_images": False,
