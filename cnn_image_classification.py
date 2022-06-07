@@ -75,6 +75,8 @@ def create_generators(
     batch_size,
     target_size,
     plot_random_images):
+    
+    print("create_generators")
 
     # read CSV_DATA_FILE, which 
     # has 55352 rows for all tuttle_twins frames from S01E01 to S01E02
@@ -278,6 +280,8 @@ def create_model(
     dropout2,
     labels): 
 
+    print("create_model")
+    
     # https://datascience.stackexchange.com/a/24524
 
     model = Sequential()
@@ -317,6 +321,8 @@ def fit_model(
     learning_rate,
     epochs):
 
+    print("fit_model")
+    
     optimizer = tf.keras.optimizers.RMSprop(
         learning_rate=learning_rate,
         rho=0.9,
@@ -382,6 +388,8 @@ def fit_model(
         callbacks=[tensorboard_callback],
         epochs=epochs)
 
+    print("plot_model_fit_history")
+    
     plot_model_fit_history(history)
 
     return model
@@ -453,6 +461,9 @@ def fit_model(
 def save_model(
     model,
     models_root_dir):
+    
+    print("save_model")
+    
     model_dir_path = model_file_utils.save_model(models_root_dir, model)
     logger.info(f"saved model to model_dir_path: {model_dir_path}")
     loaded_model = model_file_utils.load_latest_model(models_root_dir)
@@ -476,6 +487,8 @@ def evaluate_model(
     true_df,
     idx_to_label_map,
     labels):
+    
+    print("evaluate_model")
 
     # use the model to get len(LABELS) prediction probabilities in [0..1) for each image
     Y_pred = model.predict(test_generator)
@@ -506,7 +519,8 @@ def evaluate_model(
     cm = confusion_matrix(true_labels, pred_labels)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm)
     disp.plot(cmap=plt.cm.Blues)
-    print('Showing Confusion Matrix of true vs pred labels')
+    
+    print('Confusion Matrix of true vs pred labels')
     print("idx_to_label_map:", idx_to_label_map)
           
     wait_for_click()
@@ -534,6 +548,9 @@ def run_pipeline(params):
         save model,
         evaluate_level and
         return evaluation results'''
+
+    os.system('cls||clear')
+    print("run_pipeline")
 
     csv_data_file = params['csv_data_file']
     src_imgs_dir = params['src_imgs_dir']
