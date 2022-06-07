@@ -86,7 +86,8 @@ def create_generators(
 
     # counts and weights of each label before frame_subsampling
     y_counts = data_df['label'].value_counts()
-    total_label_weights_by_label = max(y_counts) / y_counts
+    # total_label_weights_by_label = max(y_counts) / y_counts
+    total_label_weights_by_label = y_counts / y_counts
 
     # keep only 1 out of frame_subsample_rate frames
     if frame_subsample_rate > 1:
@@ -668,7 +669,7 @@ def main():
         "batch_size": 32,
         "dropout1": 0.25,
         "dropout2": 0.5,
-        "epochs": 40,
+        "epochs": 2,
         "data_splits": {'train_size': 0.70, 'valid_size': 0.20, 'test_size': 0.10},
         "learning_rate": 0.0001,
         "plot_random_images": False,
