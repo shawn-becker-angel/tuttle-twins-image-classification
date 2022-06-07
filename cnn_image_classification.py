@@ -17,6 +17,20 @@
 # Import from keras_preprocessing not from keras.preprocessing
 # see https://vijayabhaskar96.medium.com/tutorial-on-keras-flow-from-dataframe-1fd4493d237c
 
+import sys
+import os
+os.system('cls||clear')
+
+print("Tuttle Twins Image Classification")
+
+print("importing tensorflow")
+import tensorflow as tf
+print("TensorFlow version:", tf.__version__)
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+print("Num CPUs Available: ", len(tf.config.experimental.list_physical_devices('CPU')))
+print()
+sys.stdout.flush()
+
 import logging
 import model_file_utils
 from shuffle_utils import triple_shuffle_split
@@ -36,7 +50,6 @@ from keras.layers import Input, Dense, Activation, Flatten, Dropout
 from keras.preprocessing.image import ImageDataGenerator
 from keras.models import Sequential
 import keras
-import tensorflow as tf
 import numpy as np
 import os
 import sys
