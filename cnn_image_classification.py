@@ -17,6 +17,12 @@
 # Import from keras_preprocessing not from keras.preprocessing
 # see https://vijayabhaskar96.medium.com/tutorial-on-keras-flow-from-dataframe-1fd4493d237c
 
+print("importing tensorflow")
+import tensorflow as tf
+print("TensorFlow version:", tf.__version__)
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+print("Num CPUs Available: ", len(tf.config.experimental.list_physical_devices('CPU')))
+
 import logging
 import model_file_utils
 from shuffle_utils import triple_shuffle_split
