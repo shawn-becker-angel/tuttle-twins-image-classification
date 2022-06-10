@@ -33,6 +33,7 @@ sys.stdout.flush()
 
 import logging
 import model_file_utils
+import history_file_utils
 from shuffle_utils import triple_shuffle_split
 from matplotlib_utils import \
     plot_idxed_generator_images, \
@@ -55,6 +56,7 @@ import os
 import sys
 import datetime
 import pandas as pd
+import more_itertools
 
 print("pd",pd.__version__)
 print("np",np.__version__)
@@ -241,7 +243,8 @@ def create_generators(
 
     test_plot_idx = generate_random_plot_idx(test_generator)
 
-    re_X_test = test_generator.next()
+    # get the first item/batch without altering the generator/iterator
+    re_X_test = more_itertools.peekable(test_generator).peek()
 
     if plot_random_images:
         plot_idxed_generator_images(
@@ -263,7 +266,8 @@ def create_generators(
         interpolation="box",
         target_size=target_size)
 
-    re_X_true, re_y_true = true_generator.next()
+    # get the first item/batch without altering the generator/iterator
+    re_X_true, re_y_true = more_itertools.peekable(true_generator).peek()
 
     assert np.array_equal(true_generator.filenames, test_generator.filenames)
     assert np.array_equal(re_X_true, re_X_test)
@@ -333,6 +337,7 @@ def fit_model(
     label_weights_by_idx,
     learning_rate,
     epochs):
+    '''Returns (history, model)'''
 
     print("fit_model")
     
@@ -401,87 +406,9 @@ def fit_model(
         callbacks=[tensorboard_callback],
         epochs=epochs)
 
-    print("plot_model_fit_history")
-    
-    plot_model_fit_history(history)
-
-    return model
-
-    # loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=False)
-    # acc_metric = keras.metrics.SparseCategoricalAccuracy()
-    # train_writer = tf.summary.create_file_writer("logs/train/")
-    # valid_writer = tf.summary.create_file_writer("logs/valid/")
-    # train_step = test_step = 0
-
-    # num_epochs = epochs
-    # for lr in [1e-1, 1e-2, 1e-3, 1e-4, 1e-5]:
-    #     train_step = test_step = 0
-    #     train_writer = tf.summary.create_file_writer("logs/train/" + str(lr))
-    #     valid_writer = tf.summary.create_file_writer("logs/valid/" + str(lr))
-    #     model = create_model(target_size, dropout1, dropout2, labels)
-
-    #     # see https://keras.io/api/optimizers/adam/
-    #     optimizer = keras.optimizers.Adam(
-    #         learning_rate=lr, # EXPERIMENTAL with [1e-1, 1e-2, 1e-3, 1e-4, 1e-5]
-    #         beta_1=0.9, # The exponential decay rate for the 1st moment estimates.
-    #         beta_2=0.999, # The exponential decay rate for the 2nd moment estimates
-    #         epsilon=1e-07, # could be EXPERIMENTAL with [1e-7, 1e-1, 1e-0]
-    #         amsgrad=False)
-
-    #     for epoch in range(num_epochs):
-    #         # Iterate through training set
-    #         for batch_idx, (x, y) in enumerate(train_generator):
-    #             with tf.GradientTape() as tape:
-    #                 y_pred = model(x)
-    #                 loss = loss_fn(y, y_pred)
-
-    #             gradients = tape.gradient(loss, model.trainable_weights)
-    #             optimizer.apply_gradients(zip(gradients, model.trainable_weights))
-    #             acc_metric.update_state(y, y_pred)
-
-    #             with train_writer.as_default():
-    #                 tf.summary.scalar("Loss", loss, step=train_step)
-    #                 tf.summary.scalar(
-    #                     "Accuracy", acc_metric.result(), step=train_step,
-    #                 )
-    #                 train_step += 1
-
-    #         # Reset accuracy in between epochs (and for testing and test)
-    #         acc_metric.reset_states()
-
-    #         # Iterate through validator set
-    #         for batch_idx, (x, y) in enumerate(valid_generator):
-    #             y_pred = model(x)
-    #             loss = loss_fn(y, y_pred)
-    #             acc_metric.update_state(y, y_pred)
-
-    #             with valid_writer.as_default():
-    #                 tf.summary.scalar("Loss", loss, step=test_step)
-    #                 tf.summary.scalar(
-    #                     "Accuracy", acc_metric.result(), step=test_step,
-    #                 )
-    #                 test_step += 1
-
-    #         acc_metric.reset_states()
-
-    #     # Reset accuracy in between epochs (and for testing and validate)
-    #     acc_metric.reset_states()
-
+    return (history, model)
 
 #------------ </fit_model> --------------#
-
-
-def save_model(
-    model,
-    models_root_dir):
-    
-    print("save_model")
-    
-    model_dir_path = model_file_utils.save_model(models_root_dir, model)
-    logger.info(f"saved model to model_dir_path: {model_dir_path}")
-    loaded_model = model_file_utils.load_latest_model(models_root_dir)
-    assert model_file_utils.models_are_equivalent(model, loaded_model)
-
 
 def quick_evaluate_model(
     model,
@@ -493,15 +420,14 @@ def quick_evaluate_model(
 
 #------------ <evaluatemodel> --------------#
 
-
 def evaluate_model(
     model,
     test_generator,
     true_df,
     idx_to_label_map,
     labels):
-    
-    print("evaluate_model")
+
+    print("evaluate_model == plots of abs(true.labels - model(test).labels)")
 
     # use the model to get len(LABELS) prediction probabilities in [0..1) for each image
     Y_pred = model.predict(test_generator)
@@ -540,7 +466,6 @@ def evaluate_model(
     
 #------------ </evaluatemodel> --------------#
 
-
 def get_imagefile_shape(csv_data_file, src_imgs_dir):
     with open(csv_data_file, "r") as f:
         line = f.readline().strip()
@@ -552,15 +477,12 @@ def get_imagefile_shape(csv_data_file, src_imgs_dir):
 
 #------------ <run_pipeline> --------------#
 
-
 def run_pipeline(params):
     '''use hyper-paramters to 
         create generators, 
         create model, 
-        fit model,
-        save model,
-        evaluate_level and
-        return evaluation results'''
+        fit model, 
+        return history and model'''
 
     os.system('cls||clear')
     print("run_pipeline")
@@ -568,6 +490,7 @@ def run_pipeline(params):
     csv_data_file = params['csv_data_file']
     src_imgs_dir = params['src_imgs_dir']
     models_root_dir = params['models_root_dir']
+    history_root_dir = params['history_root_dir']
     data_splits = params['data_splits']
     frame_subsample_rate = params['frame_subsample_rate']
     image_scale_factor = params['image_scale_factor']
@@ -588,8 +511,7 @@ def run_pipeline(params):
 
     labels = params['labels']
     label_to_idx_map = params['label_to_idx_map']
-    idx_to_label_map = {
-        label_to_idx_map[label]: label for label in label_to_idx_map.keys()}
+    idx_to_label_map = {idx: label for label, idx in  label_to_idx_map.items()}
 
     (generators, true_df, label_weights_by_idx) = create_generators(
         csv_data_file,
@@ -617,7 +539,7 @@ def run_pipeline(params):
             dropout2,
             labels)
 
-        model = fit_model(
+        (history, model) = fit_model(
             model,
             train_generator,
             valid_generator,
@@ -625,18 +547,15 @@ def run_pipeline(params):
             learning_rate,
             epochs)
 
-        model_dir_path = save_model(
-            model, 
-            models_root_dir)
+        model_dir_path = model_file_utils.save_model(
+            models_root_dir,
+            model)
+    
+        history_path = history_file_utils.save_history(
+            history_root_dir,
+            history)
 
-        history = evaluate_model(
-            model,
-            test_generator,
-            true_df,
-            idx_to_label_map,
-            labels)
-
-    return (history, model_dir_path)
+    return (history_path, model_dir_path)
 
 #------------ </run_pipeline> --------------#
 
@@ -650,11 +569,11 @@ def run_tests():
 
 #------------ <main> --------------#
 
-def main():
+def main(argv):
 
     usage="""
     usage:
-        python cnn_image_classification.py ( help | run | test | latest | img-plots-only | <model_dir_path> )
+        python cnn_image_classification.py ( help | run | test | latest-model | latest-history | img-plots-only | <model_dir_path> )
     """
 
     # defaults to be overridden by command line argvs
@@ -663,8 +582,8 @@ def main():
     model_dir_path=None
 
     # process command line argvs
-    if len(sys.argv) > 1:
-        argv1=sys.argv[1]
+    if len(argv) > 1:
+        argv1=argv[1]
         if argv1 == 'help':
             print(usage)
             return 
@@ -673,12 +592,19 @@ def main():
         elif argv1 == 'test':
             run_tests()
             return
-        elif argv1 == 'latest':
+        elif argv1 == 'latest-model':
             model=model_file_utils.load_latest_model()
             if model is None:
                 logger.info("no latest model_dir_path found")
                 logger.info("exiting now")
                 return
+        elif argv1 == 'latest-history':
+            history=history_file_utils.load_latest_history()
+            if history is None:
+                logger.info("no latest history.json file found")
+                logger.info("exiting now")
+                return
+            plot_model_fit_history(history)
         elif argv1 == 'img-plots-only':
             image_plots_only=True 
         else:
@@ -692,10 +618,11 @@ def main():
         "csv_data_file": "../csv-data/S01E01-S01E02-data.csv",
         "src_imgs_dir": "../src-images/",
         "models_root_dir": "./models/",
+        "history_root_dir": "./models/",
         "labels": ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'],
         "label_to_idx_map": {'Junk': 0, 'Common': 1, 'Uncommon': 2, 'Rare': 3, 'Legendary': 4},
-        "frame_subsample_rate": 12,
-        "image_scale_factor": 0.75,
+        "frame_subsample_rate": 48,
+        "image_scale_factor": 0.1,
         "batch_size": 32,
         "dropout1": 0.25,
         "dropout2": 0.5,
@@ -708,12 +635,17 @@ def main():
     }
 
     # run the entire pipeline
-    (history, model_dir_path) = run_pipeline(parameters)
+    (history_path, model_dir_path) = run_pipeline(parameters)
 
     #------------ </main> --------------#
 
+def run_tests():
+    pass
 
 if __name__ == '__main__':
-    with tf.device('/GPU'):
-        main()
-        print("done")
+    import sys
+    if len(sys.argv) > 1:
+        main(sys.argv)
+    else:
+        run_tests()
+    print("done")

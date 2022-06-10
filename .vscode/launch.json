@@ -4,18 +4,8 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        
 
-
-
-
-        {
-            "name": "Debug Current File",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
-            "justMyCode": false
-        },
         {
             "name": "Debug Current File",
             "type": "python",
@@ -32,43 +22,64 @@
             "request": "launch",
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
-            "program": "${workspaceFolder}/cnn_image_classification.py",  // Specify the full path to your file
-            "args": ["run"],
+            "program": "${workspaceFolder}/cnn_image_classification.py", // Specify the full path to your file
+            "args": [
+                "run"
+            ],
             "console": "integratedTerminal",
             "justMyCode": false,
-         },
-         {
+        },
+        {
             "name": "Debug 'cnn test'",
             "type": "python",
             "request": "launch",
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
-            "program": "${workspaceFolder}/cnn_image_classification.py",  // Specify the full path to your file
-            "args": ["test"],
+            "program": "${workspaceFolder}/cnn_image_classification.py", // Specify the full path to your file
+            "args": [
+                "test"
+            ],
             "console": "integratedTerminal",
             "justMyCode": false,
-         },
-         {
+        },
+        {
             "name": "Debug 'cnn latest'",
             "type": "python",
             "request": "launch",
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
-            "program": "${workspaceFolder}/cnn_image_classification.py",  // Specify the full path to your file
-            "args": ["latest"],
+            "program": "${workspaceFolder}/cnn_image_classification.py", // Specify the full path to your file
+            "args": [
+                "latest"
+            ],
             "console": "integratedTerminal",
             "justMyCode": false,
-         },
-         {
+        },
+        {
             "name": "Debug 'cnn img-plots-only'",
             "type": "python",
             "request": "launch",
             "cwd": "${workspaceFolder}",
             "envFile": "${workspaceFolder}/.env",
-            "program": "${workspaceFolder}/cnn_image_classification.py",  // Specify the full path to your file
-            "args": ["img-plots-only"],
+            "program": "${workspaceFolder}/cnn_image_classification.py", // Specify the full path to your file
+            "args": [
+                "img-plots-only"
+            ],
             "console": "integratedTerminal",
             "justMyCode": false,
-         },
+        },
+        {
+            "name": "Debug 'matplotlib_utils.py latest-history'",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "program": "${workspaceFolder}/matplotlib_utils.py", // Specify the full path to your file
+            "args": [
+                "latest-history"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+        },
     ]
 }

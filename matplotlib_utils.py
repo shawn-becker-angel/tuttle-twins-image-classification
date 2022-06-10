@@ -1,12 +1,17 @@
 # pip install matplotlib
 # pip install opencv-python
 
+import os
+import sys
 import cv2
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from typing import List
 import random
+import history_file_utils
+
+HISTORY_ROOT_DIR = "./models/"
 
 from numpy.random import default_rng
 
@@ -105,33 +110,33 @@ def plot_model_fit_history(history):
     # see https://machinelearningmastery.com/display-deep-learning-model-training-history-in-keras/
     
     # list all metrics in history
-    print(history.history.keys())
+    print(history.keys())
     
-    num_epochs = len(history.history['Accuracy'])
+    num_epochs = len(history['Accuracy'])
     if num_epochs < 2:
         print("skipping plot_model_fit_history() since num_epochs is less than 2")
         return
     
-    # plot accuracy metrics per epoch (each metric must be in history.history.keys)
-    plt.plot(history.history['Accuracy'])
-    plt.plot(history.history['val_Accuracy'])
+    # plot accuracy metrics per epoch (each metric must be in history.keys)
+    plt.plot(history['Accuracy'])
+    plt.plot(history['val_Accuracy'])
     plt.title('model accuracy')
     plt.ylabel('accuracy')
     plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
+    plt.legend(['train', 'valid'], loc='upper left')
     plt.show()
     print("Showing accuracy metrics per epoch")
     wait_for_click()
     
-    # plot loss metrics per epoch (each metric must be in history.history.keys)
-    plt.plot(history.history['loss'])
-    plt.plot(history.history['val_loss'])
+    # plot loss metrics per epoch (each metric must be in history.keys)
+    plt.plot(history['loss'])
+    plt.plot(history['val_loss'])
     plt.title('model loss')
     plt.ylabel('loss')
     plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
+    plt.legend(['train', 'valid'], loc='upper left')
     plt.show()
-    print("Showing lost metrics per epoch")
+    print("Showing loss metrics per epoch")
     wait_for_click()
 
 
@@ -164,7 +169,42 @@ def test_plot_rand_int_histogram():
 # MAIN
 #==============================================
 
-if __name__ == "__main__":
+def main(argv):
+    usage="""
+    usage:
+        python matplotlib_utils.py ( help | latest-history | <history-path> )
+    """
+
+    # defaults to be overridden by command line argvs
+
+    # process command line argvs
+    argv1=argv[1]
+    if argv1 == 'help':
+        print(usage)
+        return 
+    elif argv1 == 'latest-history':
+        history=history_file_utils.load_latest_history(HISTORY_ROOT_DIR)
+    else:
+        history_path = argv1
+        if not history_path.startswith(HISTORY_ROOT_DIR):
+            history_path = os.path.join(HISTORY_ROOT_DIR,history_path)
+        history=history_file_utils.load_history(history_path)
+    if history is None:
+        print("history file not found")
+        return
+    plot_model_fit_history(history)
+
+#==============================================
+# TESTS
+#==============================================
+
+def run_tests():
     test_plot_gamma_histogram()
     test_plot_rand_int_histogram()
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        main(sys.argv)
+    else:
+        run_tests()
     print("done")
