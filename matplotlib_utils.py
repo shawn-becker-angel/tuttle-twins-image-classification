@@ -7,19 +7,30 @@ import cv2
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
+from numpy.random import default_rng
 from typing import List
 import random
-import history_file_utils
+import type_utils
+from sklearn.metrics import ConfusionMatrixDisplay
+from dotenv import load_dotenv
 
-HISTORY_ROOT_DIR = "./models/"
+load_dotenv()
+HISTORY_ROOT_DIR = os.getenv('HISTORY_ROOT_DIR')
+CM_DICT_ROOT_DIR = os.getenv("CM_DICT_ROOT_DIR")
 
-from numpy.random import default_rng
+assert HISTORY_ROOT_DIR is not None, "HISTORY_ROOT_DIR not found in dotenv"
+assert CM_DICT_ROOT_DIR is not None, "CM_DICT_ROOT_DIR not found in dotenv"
 
-def wait_for_click():
+def wait_for_click(timeout_seconds=-1) -> int:
+    '''Wait for user input and return True if a key was pressed, 
+    False if a mouse button was pressed and None if no input was 
+    given within timeout seconds. Negative values deactivate timeout.'''
+
     print(f"Click key or mouse in window to close.")
-    plt.waitforbuttonpress()
+    result = plt.waitforbuttonpress(timeout_seconds)
     plt.close("all")
     # plt.show(block=False)
+    return result
 
 def get_unique_random_ints(minVal: int, maxVal: int, N: int):
     R = maxVal-minVal
@@ -106,39 +117,50 @@ def plot_histogram(title: str='Title', data: List[float]=[], with_normal: bool=T
     plt.show()
     wait_for_click()
 
-def plot_model_fit_history(history):
+def plot_history(history, timeout=-1):
     # see https://machinelearningmastery.com/display-deep-learning-model-training-history-in-keras/
     
-    # list all metrics in history
-    print(history.keys())
+    history_dict = type_utils.get_history_dict(history)
+
+    # list all metrics in history_dict
+
+    print(history_dict.keys())
     
-    num_epochs = len(history['Accuracy'])
+    num_epochs = len(history_dict['Accuracy'])
     if num_epochs < 2:
-        print("skipping plot_model_fit_history() since num_epochs is less than 2")
+        print("skipping plot_history() since num_epochs is less than 2")
         return
     
-    # plot accuracy metrics per epoch (each metric must be in history.keys)
-    plt.plot(history['Accuracy'])
-    plt.plot(history['val_Accuracy'])
+    # plot accuracy metrics per epoch (each metric must be in history_dict.keys)
+    plt.plot(history_dict['Accuracy'])
+    plt.plot(history_dict['val_Accuracy'])
     plt.title('model accuracy')
     plt.ylabel('accuracy')
     plt.xlabel('epoch')
     plt.legend(['train', 'valid'], loc='upper left')
     plt.show()
     print("Showing accuracy metrics per epoch")
-    wait_for_click()
+    wait_for_click(timeout)
     
-    # plot loss metrics per epoch (each metric must be in history.keys)
-    plt.plot(history['loss'])
-    plt.plot(history['val_loss'])
+    # plot loss metrics per epoch (each metric must be in history_dict.keys)
+    plt.plot(history_dict['loss'])
+    plt.plot(history_dict['val_loss'])
     plt.title('model loss')
     plt.ylabel('loss')
     plt.xlabel('epoch')
     plt.legend(['train', 'valid'], loc='upper left')
     plt.show()
     print("Showing loss metrics per epoch")
-    wait_for_click()
+    wait_for_click(timeout)
 
+def plot_cm_dict(cm_dict, timeout=-1):
+    assert type_utils.is_cm_dict(cm_dict)
+    cm = cm_dict['cm']
+    labels = cm_dict['labels']
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
+    disp.plot(cmap=plt.cm.Blues)
+    print("Showing confusion matrix of true vs pred labels")
+    wait_for_click(timeout)
 
 #==============================================
 # TESTS
@@ -165,6 +187,10 @@ def test_plot_rand_int_histogram():
         print(f"ERROR: maxS:{maxS} not < maxVal:{maxVal}")
     plot_histogram(title="randint distribution", data=s )
 
+def run_tests():
+    test_plot_gamma_histogram()
+    test_plot_rand_int_histogram()
+
 #==============================================
 # MAIN
 #==============================================
@@ -172,39 +198,21 @@ def test_plot_rand_int_histogram():
 def main(argv):
     usage="""
     usage:
-        python matplotlib_utils.py ( help | latest-history | <history-path> )
+        python matplotlib_utils.py ( help | test )
     """
+    argv1 = argv[1] if len(argv) > 0 else 'help'
 
     # defaults to be overridden by command line argvs
 
     # process command line argvs
-    argv1=argv[1]
     if argv1 == 'help':
         print(usage)
         return 
-    elif argv1 == 'latest-history':
-        history=history_file_utils.load_latest_history(HISTORY_ROOT_DIR)
-    else:
-        history_path = argv1
-        if not history_path.startswith(HISTORY_ROOT_DIR):
-            history_path = os.path.join(HISTORY_ROOT_DIR,history_path)
-        history=history_file_utils.load_history(history_path)
-    if history is None:
-        print("history file not found")
-        return
-    plot_model_fit_history(history)
+    elif argv1 in ['test', 'tests']:
+        run_tests()
+        return 
 
-#==============================================
-# TESTS
-#==============================================
-
-def run_tests():
-    test_plot_gamma_histogram()
-    test_plot_rand_int_histogram()
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        main(sys.argv)
-    else:
-        run_tests()
-    print("done")
+    main(sys.argv)
+    print("done plot")

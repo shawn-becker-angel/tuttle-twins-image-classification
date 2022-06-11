@@ -156,4 +156,4 @@ if __name__ == "__main__":
     for i in range(min(N,10)):
         print(invalid[i])
 
-    print("done")
+    print("done img-files")

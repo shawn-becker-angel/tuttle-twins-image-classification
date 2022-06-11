@@ -34,17 +34,19 @@ sys.stdout.flush()
 import logging
 import model_file_utils
 import history_file_utils
+import cm_dict_file_utils
 from shuffle_utils import triple_shuffle_split
 from matplotlib_utils import \
     plot_idxed_generator_images, \
     plot_idxed_image_files_with_labels, \
     generate_random_plot_idx, \
-    plot_model_fit_history, \
-    wait_for_click
+    plot_history, \
+    plot_cm_dict
+
 from matplotlib import pyplot as plt
 import matplotlib
 from PIL import Image
-from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import classification_report, confusion_matrix
 import sklearn
 from keras.layers import Conv2D, MaxPooling2D
 from keras.layers import Input, Dense, Activation, Flatten, Dropout
@@ -58,9 +60,9 @@ import datetime
 import pandas as pd
 import more_itertools
 
-print("pd",pd.__version__)
-print("np",np.__version__)
-print("tf",tf.__version__)
+print("pandas",pd.__version__)
+print("numpy",np.__version__)
+print("tensorflow",tf.__version__)
 print("keras",keras.__version__)
 print("sklearn",sklearn.__version__)
 print("matplotlib",matplotlib.__version__)
@@ -68,17 +70,13 @@ print("matplotlib",matplotlib.__version__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("cnn_image_classification")
 
-
-# verify availability of GPU
-tf.config.list_physical_devices()
-with tf.device('/GPU'):
-    a = tf.random.normal(shape=(2,), dtype=tf.float64)
-    b = tf.nn.relu(a)
-    logger.info(f"a:{a}")
-    logger.info(f"b:{b}")
+from dotenv import load_dotenv
+load_dotenv()
+MODELS_ROOT_DIR = os.getenv('MODELS_ROOT_DIR')
+HISTORY_ROOT_DIR = os.getenv('HISTORY_ROOT_DIR')
+CM_DICT_ROOT_DIR = os.getenv("CM_DICT_ROOT_DIR")
 
 #------------ <create_generators> --------------#
-
 
 def create_generators(
     csv_data_file, 
@@ -87,6 +85,7 @@ def create_generators(
     idx_to_label_map,
     data_splits,
     frame_subsample_rate,
+    label_weighted,
     batch_size,
     target_size,
     plot_random_images):
@@ -97,14 +96,17 @@ def create_generators(
     # has 55352 rows for all tuttle_twins frames from S01E01 to S01E02
     # and has already undergone 10 iterations of shuffling/resampling
 
-    data_df = pd.read_csv(csv_data_file, header=None,
-                          dtype=str, names=['filename', 'label'])
+    data_df = pd.read_csv(
+        csv_data_file, header=None,
+        dtype=str, names=['filename', 'label'])
     logger.info(f"data_df.len: {len(data_df)}")
 
     # counts and weights of each label before frame_subsampling
     y_counts = data_df['label'].value_counts()
-    # total_label_weights_by_label = max(y_counts) / y_counts
-    total_label_weights_by_label = y_counts / y_counts
+    if label_weighted is True:
+        total_label_weights_by_label = max(y_counts) / y_counts
+    else:
+        total_label_weights_by_label = y_counts / y_counts
 
     # keep only 1 out of frame_subsample_rate frames
     if frame_subsample_rate > 1:
@@ -141,6 +143,7 @@ def create_generators(
         idx: total_label_weights_by_label[idx_to_label_map[idx]] for idx in idx_to_label_map.keys()}
 
     # create indices with percentages over N
+    N = len(data_df)
     train_idx, valid_idx, test_idx = triple_shuffle_split(
         data_size=N,
         data_splits=data_splits, 
@@ -155,17 +158,17 @@ def create_generators(
     y_data = np.array(y_data)
 
     # apply indices and name each series
-    X_train = pd.Series(X_data[train_idx], name='filename')
+    X_train = pd.Series(X_data[train_idx], name='filename', dtype="string")
     y_train = pd.Series(y_data[train_idx], name='label', dtype='float64')
         
-    X_valid = pd.Series(X_data[valid_idx], name='filename')
+    X_valid = pd.Series(X_data[valid_idx], name='filename', dtype="string")
     y_valid = pd.Series(y_data[valid_idx], name='label', dtype='float64')
 
-    X_test = pd.Series(X_data[test_idx], name='filename')
+    X_test = pd.Series(X_data[test_idx], name='filename', dtype="string")
     y_test = pd.Series(y_data[test_idx], name='label', dtype='float64')
 
     # true is a duplicate of test
-    X_true = pd.Series(X_data[test_idx], name='filename')
+    X_true = pd.Series(X_data[test_idx], name='filename', dtype="string")
     y_true = pd.Series(y_data[test_idx], name='label', dtype='float64')
 
     # concat X and y series horizontally to create dataframes
@@ -278,11 +281,6 @@ def create_generators(
             "true", true_generator, 
             test_plot_idx, idx_to_label_map)
 
-    # batch_cnt = 0
-    # for batch_idx, (x, y) in enumerate(train_generator):
-    #     batch_cnt += 1
-    # print(batch_cnt)
-
     generators = (train_generator, valid_generator, test_generator)
     return (generators, true_df, label_weights_by_idx)
 
@@ -336,8 +334,9 @@ def fit_model(
     valid_generator,
     label_weights_by_idx,
     learning_rate,
-    epochs):
-    '''Returns (history, model)'''
+    epochs,
+    models_root_dir,
+    history_root_dir) -> None:
 
     print("fit_model")
     
@@ -406,7 +405,16 @@ def fit_model(
         callbacks=[tensorboard_callback],
         epochs=epochs)
 
-    return (history, model)
+    # save the model
+    model_dir_path = model_file_utils.save_model(models_root_dir, model)
+    print(f"model saved to {model_dir_path}")
+
+    # save and plot the history
+    history_path = history_file_utils.save_history(history_root_dir, history)
+    print(f"history saved to {history_path}")
+
+    plot_history(history)
+    
 
 #------------ </fit_model> --------------#
 
@@ -425,9 +433,15 @@ def evaluate_model(
     test_generator,
     true_df,
     idx_to_label_map,
-    labels):
+    labels,
+    cm_dict_root_dir) -> None:
+    '''
+    Plots random true-vs-pred images,
+    then computes, saves, and plots the cm_dict
+    '''
+    assert model is not None, "ERROR: model is undefined"
 
-    print("evaluate_model == plots of abs(true.labels - model(test).labels)")
+    print("evaluate_model")
 
     # use the model to get len(LABELS) prediction probabilities in [0..1) for each image
     Y_pred = model.predict(test_generator)
@@ -454,15 +468,17 @@ def evaluate_model(
     plot_idxed_image_files_with_labels(
         None, true_filenames, true_v_pred_labels, test_idx)
 
-    # compute and display the confusion matrix of true vs pred labels
-    cm = confusion_matrix(true_labels, pred_labels)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-    disp.plot(cmap=plt.cm.Blues)
-    
+    # compute, make, save and plot the confusion matrix of true vs pred labels
+    cm = confusion_matrix(true_labels, pred_labels, labels=labels)
+    cm_dict = cm_dict_file_utils.make_cm_dict(cm=cm, labels=labels)
+
+    cm_dict_path = cm_dict_file_utils.save_cm_dict(cm_dict_root_dir, cm_dict)
+    print(f"cm_dict saved to {cm_dict_path}")
+
     print('Confusion Matrix of true vs pred labels')
     print("idx_to_label_map:", idx_to_label_map)
-          
-    wait_for_click()
+    plot_cm_dict(cm_dict)
+
     
 #------------ </evaluatemodel> --------------#
 
@@ -484,15 +500,16 @@ def run_pipeline(params):
         fit model, 
         return history and model'''
 
-    os.system('cls||clear')
     print("run_pipeline")
 
     csv_data_file = params['csv_data_file']
     src_imgs_dir = params['src_imgs_dir']
     models_root_dir = params['models_root_dir']
     history_root_dir = params['history_root_dir']
+    cm_dict_root_dir = params['cm_dict_root_dir']
     data_splits = params['data_splits']
     frame_subsample_rate = params['frame_subsample_rate']
+    label_weighted = params['label_weighted']
     image_scale_factor = params['image_scale_factor']
     batch_size = params['batch_size']
     learning_rate = params['learning_rate']
@@ -520,6 +537,7 @@ def run_pipeline(params):
         idx_to_label_map,
         data_splits,
         frame_subsample_rate,
+        label_weighted,
         batch_size,
         target_size,
         plot_random_images)
@@ -539,30 +557,31 @@ def run_pipeline(params):
             dropout2,
             labels)
 
-        (history, model) = fit_model(
+        fit_model(
             model,
             train_generator,
             valid_generator,
             label_weights_by_idx,
             learning_rate,
-            epochs)
-
-        model_dir_path = model_file_utils.save_model(
+            epochs,
             models_root_dir,
-            model)
-    
-        history_path = history_file_utils.save_history(
-            history_root_dir,
-            history)
+            history_root_dir)  
 
-    return (history_path, model_dir_path)
+    evaluate_model(
+        model, 
+        test_generator, 
+        true_df,
+        idx_to_label_map,
+        labels,
+        cm_dict_root_dir)
+
 
 #------------ </run_pipeline> --------------#
 
 #------------ <tests> --------------#
 
-def run_tests():
-    logger.info("run_tests() not yet implementated")
+def tests():
+    logger.info("tests() not yet implementated")
 
 #------------ </tests> --------------#
 
@@ -572,80 +591,79 @@ def run_tests():
 def main(argv):
 
     usage="""
-    usage:
-        python cnn_image_classification.py ( help | run | test | latest-model | latest-history | img-plots-only | <model_dir_path> )
+usage:
+    python cnn_image_classification.py ( help | run | test | img-plots-only | latest-model | <model_dir_path> )
     """
 
     # defaults to be overridden by command line argvs
     model=None
-    image_plots_only=False
-    model_dir_path=None
+    model_dir_path = None
 
-    # process command line argvs
-    if len(argv) > 1:
-        argv1=argv[1]
-        if argv1 == 'help':
-            print(usage)
-            return 
-        elif argv1 == 'run':
-            pass
-        elif argv1 == 'test':
-            run_tests()
-            return
-        elif argv1 == 'latest-model':
-            model=model_file_utils.load_latest_model()
-            if model is None:
-                logger.info("no latest model_dir_path found")
-                logger.info("exiting now")
-                return
-        elif argv1 == 'latest-history':
-            history=history_file_utils.load_latest_history()
-            if history is None:
-                logger.info("no latest history.json file found")
-                logger.info("exiting now")
-                return
-            plot_model_fit_history(history)
-        elif argv1 == 'img-plots-only':
-            image_plots_only=True 
-        else:
-            model_dir_path=argv1
-            model=model_file_utils.load_model(model_dir_path)
-            if model is None:
-                raise Exception(f"load_model({model_dir_path}) failed")
+    # process the command line argv
+    argv1 = argv[1] if len(argv) > 1 else 'help'
+    if argv1 == 'help':
+        print(usage)
+        return 
+    elif argv1 == 'run':
+        pass
+    elif argv1 == 'test':
+        tests()
+        return
+    elif argv1 == 'latest-model':
+        model_dir_path = model_file_utils.find_latest_model_dir_path(MODELS_ROOT_DIR)
+    else:
+        model_dir_path=argv1
+    
 
-    # use command line args to modify parameters
+    if model_dir_path is not None:
+        print("loading model_dir_path:", model_dir_path)
+        model = model_file_utils.load_model(model_dir_path)
+        if model is None:
+            print("failed to load model_dir_path:", model_dir_path )
+
+
+    # if control makes it to this point, prepare 
+    # the parameters used for run_pipeline() 
+    # including the model, which may have been
+    # loaded when processing the command line vargs
+
     parameters={
         "csv_data_file": "../csv-data/S01E01-S01E02-data.csv",
         "src_imgs_dir": "../src-images/",
-        "models_root_dir": "./models/",
-        "history_root_dir": "./models/",
+        "models_root_dir": MODELS_ROOT_DIR,
+        "history_root_dir": HISTORY_ROOT_DIR,
+        "cm_dict_root_dir": CM_DICT_ROOT_DIR,
         "labels": ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'],
         "label_to_idx_map": {'Junk': 0, 'Common': 1, 'Uncommon': 2, 'Rare': 3, 'Legendary': 4},
-        "frame_subsample_rate": 48,
-        "image_scale_factor": 0.1,
+        "frame_subsample_rate": 12,
+        "label_weighted": False,
+        "image_scale_factor": 0.50,
         "batch_size": 32,
         "dropout1": 0.25,
         "dropout2": 0.5,
-        "epochs": 2,
+        "epochs": 10,
         "data_splits": {'train_size': 0.70, 'valid_size': 0.20, 'test_size': 0.10},
         "learning_rate": 0.0001,
         "plot_random_images": False,
-        "image_plots_only": image_plots_only,
+        "image_plots_only": False,
         "model": model
     }
 
     # run the entire pipeline
-    (history_path, model_dir_path) = run_pipeline(parameters)
+    run_pipeline(parameters)
 
     #------------ </main> --------------#
 
-def run_tests():
-    pass
 
 if __name__ == '__main__':
-    import sys
-    if len(sys.argv) > 1:
+
+    print()
+    num_gpus = len(tf.config.experimental.list_physical_devices('GPU'))
+    device_name = "/GPU:0" if num_gpus > 0 else "/device:CPU:0"
+    with tf.device(device_name):
+        print()
+        print("tensorflow using device:", device_name)
+
         main(sys.argv)
-    else:
-        run_tests()
-    print("done")
+
+    print("done cnn")

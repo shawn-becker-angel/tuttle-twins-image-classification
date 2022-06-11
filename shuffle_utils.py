@@ -86,4 +86,4 @@ if __name__ == '__main__':
             random_state=123)
     assert [len(train_idx),len(valid_idx),len(test_idx)]  == [50,30,20]
 
-    print("done")
+    print("done shfl")
