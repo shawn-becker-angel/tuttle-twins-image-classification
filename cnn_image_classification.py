@@ -85,7 +85,6 @@ def create_generators(
     idx_to_label_map,
     data_splits,
     frame_subsample_rate,
-    label_weighted,
     batch_size,
     target_size,
     plot_random_images):
@@ -103,10 +102,7 @@ def create_generators(
 
     # counts and weights of each label before frame_subsampling
     y_counts = data_df['label'].value_counts()
-    if label_weighted is True:
-        total_label_weights_by_label = max(y_counts) / y_counts
-    else:
-        total_label_weights_by_label = y_counts / y_counts
+    total_label_weights_by_label = max(y_counts) / y_counts
 
     # keep only 1 out of frame_subsample_rate frames
     if frame_subsample_rate > 1:
@@ -291,35 +287,43 @@ def create_generators(
 
 def create_model(
     target_size,
+    kernel_size,
     dropout1,
     dropout2,
     labels): 
 
     print("create_model")
+    k = kernel_size
     
     # https://datascience.stackexchange.com/a/24524
+    # https://towardsdatascience.com/how-to-calculate-the-number-of-parameters-in-keras-models-710683dae0ca#:~:text=By%20applying%20this%20formula%20to,1%20is%20the%20input%20channel.
 
     model = Sequential()
-    input_shape = (target_size[0], target_size[1], 3)  # H,W,C
-    model.add(Conv2D(32, (3, 3), padding='same', input_shape=input_shape))
-    model.add(Activation('relu'))
-    model.add(Conv2D(32, (3, 3)))
-    model.add(Activation('relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Dropout(dropout1))
+    input_shape = (target_size[0], target_size[1], 3)  # (144, 256, 3)
+    model.add(Conv2D(32, (k, k), padding='same', input_shape=input_shape)) # 896
+    model.add(Activation('relu'))  # 0
+    model.add(Conv2D(32, (k, k))) # 9248
+    model.add(Activation('relu'))  # 0
+    model.add(MaxPooling2D(pool_size=(2, 2))) # 0
+    model.add(Dropout(dropout1))  # 0
 
-    model.add(Conv2D(64, (3, 3), padding='same'))
-    model.add(Activation('relu'))
-    model.add(Conv2D(64, (3, 3)))
-    model.add(Activation('relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    model.add(Dropout(dropout1))
+    model.add(Conv2D(64, (k, k), padding='same')) # 18496
+    model.add(Activation('relu')) # 0
+    model.add(Conv2D(64, (k, k))) # 36928
+    model.add(Activation('relu')) # 0
+    model.add(MaxPooling2D(pool_size=(2, 2))) # 0
+    model.add(Dropout(dropout1)) # 0
 
-    model.add(Flatten())
-    model.add(Dense(512))
-    model.add(Activation('relu'))
-    model.add(Dropout(dropout2))
-    model.add(Dense(len(labels), activation='softmax'))
+    model.add(Flatten()) # 0
+    model.add(Dense(512)) # 69075456
+    model.add(Activation('relu')) # 0
+    model.add(Dropout(dropout2)) # 0
+    model.add(Dense(len(labels), activation='softmax')) # 2565
+
+    model.summary()
+    # Total params: 69,143,589
+    # Trainable params: 69,143,589
+    # Non-trainable params: 0
 
     return model
 
@@ -334,6 +338,10 @@ def fit_model(
     valid_generator,
     label_weights_by_idx,
     learning_rate,
+    rho,
+    momentum,
+    epsilon,
+    centered,
     epochs,
     models_root_dir,
     history_root_dir) -> None:
@@ -342,10 +350,10 @@ def fit_model(
     
     optimizer = tf.keras.optimizers.RMSprop(
         learning_rate=learning_rate,
-        rho=0.9,
-        momentum=0.0,
-        epsilon=1e-07,
-        centered=False,
+        rho=rho,
+        momentum=momentum,
+        epsilon=epsilon,
+        centered=centered,
     )
 
     model.compile(
@@ -502,34 +510,42 @@ def run_pipeline(params):
 
     print("run_pipeline")
 
+    # pull params
     csv_data_file = params['csv_data_file']
     src_imgs_dir = params['src_imgs_dir']
     models_root_dir = params['models_root_dir']
     history_root_dir = params['history_root_dir']
     cm_dict_root_dir = params['cm_dict_root_dir']
     data_splits = params['data_splits']
+    epochs = params['epochs']
     frame_subsample_rate = params['frame_subsample_rate']
-    label_weighted = params['label_weighted']
     image_scale_factor = params['image_scale_factor']
     batch_size = params['batch_size']
+    kernel_size = params['kernel_size']
     learning_rate = params['learning_rate']
-    epochs = params['epochs']
+    rho = params['rho']
+    momentum = params['momentum']
+    epsilon = params['epsilon']
+    centered = params['centered']
     dropout1 = params['dropout1']
     dropout2 = params['dropout2']
     plot_random_images = params['plot_random_images']
     image_plots_only = params['image_plots_only']
     model = params['model']
 
+    # compute dimensions 
     (imagefile_height, imagefile_width) = get_imagefile_shape(
         csv_data_file, src_imgs_dir)
     image_height = int(round(imagefile_height * image_scale_factor))
     image_width = int(round(imagefile_width * image_scale_factor))
     target_size = (image_height, image_width)
 
+    # compute labels
     labels = params['labels']
     label_to_idx_map = params['label_to_idx_map']
     idx_to_label_map = {idx: label for label, idx in  label_to_idx_map.items()}
 
+    # create ImageDataGenerators
     (generators, true_df, label_weights_by_idx) = create_generators(
         csv_data_file,
         src_imgs_dir,
@@ -537,7 +553,6 @@ def run_pipeline(params):
         idx_to_label_map,
         data_splits,
         frame_subsample_rate,
-        label_weighted,
         batch_size,
         target_size,
         plot_random_images)
@@ -553,6 +568,7 @@ def run_pipeline(params):
 
         model = create_model(
             target_size,
+            kernel_size,
             dropout1,
             dropout2,
             labels)
@@ -563,9 +579,13 @@ def run_pipeline(params):
             valid_generator,
             label_weights_by_idx,
             learning_rate,
+            rho,
+            momentum,
+            epsilon,
+            centered,
             epochs,
             models_root_dir,
-            history_root_dir)  
+            history_root_dir)
 
     evaluate_model(
         model, 
@@ -623,29 +643,40 @@ usage:
 
 
     # if control makes it to this point, prepare 
-    # the parameters used for run_pipeline() 
+    # the parameters used by run_pipeline() 
     # including the model, which may have been
     # loaded when processing the command line vargs
 
-    parameters={
+    parameters = {
+        # data settings
         "csv_data_file": "../csv-data/S01E01-S01E02-data.csv",
         "src_imgs_dir": "../src-images/",
+        "labels": ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'],
+        "label_to_idx_map": {'Junk': 0, 'Common': 1, 'Uncommon': 2, 'Rare': 3, 'Legendary': 4},
+        "data_splits": {'train_size': 0.70, 'valid_size': 0.20, 'test_size': 0.10},
+
+        # operational settings
         "models_root_dir": MODELS_ROOT_DIR,
         "history_root_dir": HISTORY_ROOT_DIR,
         "cm_dict_root_dir": CM_DICT_ROOT_DIR,
-        "labels": ['Junk', 'Common', 'Uncommon', 'Rare', 'Legendary'],
-        "label_to_idx_map": {'Junk': 0, 'Common': 1, 'Uncommon': 2, 'Rare': 3, 'Legendary': 4},
-        "frame_subsample_rate": 12,
-        "label_weighted": False,
-        "image_scale_factor": 0.50,
-        "batch_size": 32,
-        "dropout1": 0.25,
-        "dropout2": 0.5,
-        "epochs": 10,
-        "data_splits": {'train_size': 0.70, 'valid_size': 0.20, 'test_size': 0.10},
-        "learning_rate": 0.0001,
         "plot_random_images": False,
         "image_plots_only": False,
+
+        # hyperparameters
+        "epochs": 2,
+        "frame_subsample_rate": 12,
+        "image_scale_factor": 0.5,
+        "batch_size": 32,
+        "kernel_size": 3,
+        "learning_rate": 0.0001,
+        "rho": 0.9,
+        "momentum": 0.0,
+        "epsilon": 1e-07,
+        "centered": False,
+        "dropout1": 0.25,
+        "dropout2": 0.5,
+
+        # the model
         "model": model
     }
 
