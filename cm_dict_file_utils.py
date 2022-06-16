@@ -21,6 +21,16 @@ def save_cm_dict(cm_dict_root_dir: str, cm_dict: dict) -> str:
         json.dump(cm_dict, write_file, cls=NumpyArrayEncoder)
     return cm_dict_path
 
+def load_save_figure_cm_dict(cm_dict_path: str) -> str:
+    '''Load and save a the given cm_dict as a .png file'''
+    cm_dict = load_cm_dict(cm_dict_path)
+    if cm_dict:
+        cm_dict_figure_path = cm_dict_path.replace('json','png')
+        plot_cm_dict(cm_dict, save_figure_path=cm_dict_figure_path)
+
+    return cm_dict_figure_path
+
+
 def load_cm_dict(cm_dict_path: str) -> dict:
     '''Load and return a cm_dict from the given cm_dict_path'''
     with open(cm_dict_path, "r") as read_file:
@@ -118,7 +128,7 @@ def tests():
 def main(argv):
     usage = """
 Usage:
-  python cm_dict_file_utils.py (help | test | latest | <cm_dict_path)
+  python cm_dict_file_utils.py (help | test | latest | <cm_dict_path> | save <cm_dict_path>)
 """
     # defaults
     cm_dict_path = None
@@ -132,6 +142,19 @@ Usage:
         return
     elif argv1 == 'latest':
         cm_dict_path = find_latest_cm_dict_path(CM_DICT_ROOT_DIR)
+    elif argv1 == 'save':
+        if len(argv) <= 2:
+            print("missing required cm_dict_path")
+            return
+        cm_dict_path = argv[2]
+        cm_dict = load_cm_dict(cm_dict_path)
+        if cm_dict is None:
+            print("failed to load cm_dict_path:", cm_dict_path)
+            return
+        else:
+            save_figure_path = cm_dict_path.replace("json","png")
+            plot_cm_dict(cm_dict, save_figure_path=save_figure_path)
+            return 
     else:
         cm_dict_path = argv1
     
@@ -146,4 +169,3 @@ Usage:
 
 if __name__ == '__main__':
     main(sys.argv)
-    print("done cm-dict")

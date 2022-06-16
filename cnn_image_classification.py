@@ -2,20 +2,47 @@
 # by Bryan M. Li 
 # Published in Towards Data Science - Oct 26, 2021
 #
-# special setup instructions for macos Monterey 12.3.1
-#
-# python3.8 -m venv venv-tf-metal
-# source venv-tf-metal/bin/activate
-# python3.8 -m pip install --upgrade pip
-# SYSTEM_VERSION_COMPAT=0 pip install tensorflow-macos tensorflow-metal
+# special setup instructions for macos Monterey 12.4
+
+# follow all 3 instruction steps for arm64 : Apple Silicon here: 
+# https://developer.apple.com/metal/tensorflow-plugin/
+
+# download Miniforge3-MacOSX-arm64.sh from 
+# here: https://github.com/conda-forge/miniforge/releases
+
+# and then
+
 # pip install tensorflow_datasets
 # pip uninstall PIL
 # pip install Image
+# pip install opencv-python
+# pip install python-dotenv
+# pip install more-itertools
+# pip install seaborn
+# pip install scikit-learn
 # pip uninstall keras-preprocessing
 # pip install git+https://github.com/keras-team/keras-preprocessing.git
 
 # Import from keras_preprocessing not from keras.preprocessing
 # see https://vijayabhaskar96.medium.com/tutorial-on-keras-flow-from-dataframe-1fd4493d237c
+
+# If you encounter the following error:
+# tensorflow.python.framework.errors_impl.InvalidArgumentError: Multiple Default OpKernel registrations 
+# match NodeDef '{{node ZerosLike}}': 'op: "ZerosLike" device_type: "DEFAULT" constraint { name: "T" 
+# allowed_values { list { type: DT_INT32 } } } host_memory_arg: "y"' and 'op: "ZerosLike" device_type: 
+# "DEFAULT" constraint { name: "T" allowed_values { list { type: DT_INT32 } } } host_memory_arg: "y"' [Op:ZerosLike]
+
+# Then try the following as described here: https://stackoverflow.com/a/72565163/4607079
+
+# pip uninstall tensorflow-metal
+# conda deactivate
+# conda create --name tensorflow_m1 python==3.9
+# conda activate tensorflow_m1
+# conda install -c apple tensorflow-deps==2.8
+# pip install tensorflow-macos==2.8
+# pip install tensorflow-macos==2.8 --no-dependencies
+# pip install tensorflow-metal==0.4.0
+
 
 import sys
 import os
@@ -87,6 +114,7 @@ def create_generators(
     frame_subsample_rate,
     batch_size,
     target_size,
+    headless,
     plot_random_images):
     
     print("create_generators")
@@ -188,14 +216,14 @@ def create_generators(
         y_col="label",
         subset=None,
         batch_size=batch_size,
-        seed=42,
-        shuffle=False,
+        seed=31,
+        shuffle=True,
         validate_filenames=False,  # not needed
         class_mode="raw",  # even though we've done our own categorization?
         interpolation="box",  # prevents antialiasing if subsampling
         target_size=target_size)
 
-    if plot_random_images:
+    if not headless and plot_random_images:
         train_plot_idx = generate_random_plot_idx(train_generator)
         plot_idxed_generator_images(
             name="train", generator=train_generator, 
@@ -209,7 +237,7 @@ def create_generators(
         y_col="label",
         subset=None,
         batch_size=batch_size, 
-        seed=42,
+        seed=71,
         shuffle=False,
         steps_per_epoch=None,  # no shuffle if not None
         validate_filenames=False,  # not needed
@@ -217,7 +245,7 @@ def create_generators(
         interpolation="box",
         target_size=target_size)
 
-    if plot_random_images:
+    if not headless and plot_random_images:
         valid_plot_idx = generate_random_plot_idx(valid_generator)
         plot_idxed_generator_images(
             "valid", valid_generator, 
@@ -245,7 +273,7 @@ def create_generators(
     # get the first item/batch without altering the generator/iterator
     re_X_test = more_itertools.peekable(test_generator).peek()
 
-    if plot_random_images:
+    if not headless and plot_random_images:
         plot_idxed_generator_images(
             "test", test_generator, 
             test_plot_idx)
@@ -272,7 +300,7 @@ def create_generators(
     assert np.array_equal(re_X_true, re_X_test)
     assert np.array_equal(re_y_true, test_df['label'])
 
-    if plot_random_images:
+    if not headless and plot_random_images:
         plot_idxed_generator_images(
             "true", true_generator, 
             test_plot_idx, idx_to_label_map)
@@ -343,6 +371,7 @@ def fit_model(
     epsilon,
     centered,
     epochs,
+    headless,
     models_root_dir,
     history_root_dir) -> None:
 
@@ -417,11 +446,13 @@ def fit_model(
     model_dir_path = model_file_utils.save_model(models_root_dir, model)
     print(f"model saved to {model_dir_path}")
 
-    # save and plot the history
+    # save the history
     history_path = history_file_utils.save_history(history_root_dir, history)
     print(f"history saved to {history_path}")
 
-    plot_history(history)
+    if not headless:
+        # plot the history
+        plot_history(history)
     
 
 #------------ </fit_model> --------------#
@@ -442,6 +473,8 @@ def evaluate_model(
     true_df,
     idx_to_label_map,
     labels,
+    headless,
+    plot_random_images,
     cm_dict_root_dir) -> None:
     '''
     Plots random true-vs-pred images,
@@ -469,23 +502,27 @@ def evaluate_model(
     assert np.array_equal(pred_filenames, true_filenames)
     num_files = len(true_filenames)
 
-    # Use the test_idx to plot image_files with true/pred labels  
-    test_idx = generate_random_plot_idx(test_generator)
-    true_v_pred_labels = [
-        f"{true_labels[i]}/{pred_labels[i]}" for i in range(num_files)]
-    plot_idxed_image_files_with_labels(
-        None, true_filenames, true_v_pred_labels, test_idx)
+    if not headless and plot_random_images:
+        # Use the test_idx to plot image_files with true/pred labels  
+        test_idx = generate_random_plot_idx(test_generator)
+        true_v_pred_labels = [
+            f"{true_labels[i]}/{pred_labels[i]}" for i in range(num_files)]
+        plot_idxed_image_files_with_labels(
+            None, true_filenames, true_v_pred_labels, test_idx)
 
-    # compute, make, save and plot the confusion matrix of true vs pred labels
+    # compute ane make the confusion matrix of true vs pred labels
     cm = confusion_matrix(true_labels, pred_labels, labels=labels)
     cm_dict = cm_dict_file_utils.make_cm_dict(cm=cm, labels=labels)
 
+    # save the confusion matrix
     cm_dict_path = cm_dict_file_utils.save_cm_dict(cm_dict_root_dir, cm_dict)
     print(f"cm_dict saved to {cm_dict_path}")
 
-    print('Confusion Matrix of true vs pred labels')
-    print("idx_to_label_map:", idx_to_label_map)
-    plot_cm_dict(cm_dict)
+    if not headless:
+        # plot the confusion matrix
+        print('Confusion Matrix of true vs pred labels')
+        print("idx_to_label_map:", idx_to_label_map)
+        plot_cm_dict(cm_dict)
 
     
 #------------ </evaluatemodel> --------------#
@@ -529,6 +566,7 @@ def run_pipeline(params):
     centered = params['centered']
     dropout1 = params['dropout1']
     dropout2 = params['dropout2']
+    headless = params['headless']
     plot_random_images = params['plot_random_images']
     image_plots_only = params['image_plots_only']
     model = params['model']
@@ -555,6 +593,7 @@ def run_pipeline(params):
         frame_subsample_rate,
         batch_size,
         target_size,
+        headless,
         plot_random_images)
 
     (train_generator, valid_generator, test_generator) = generators
@@ -584,6 +623,7 @@ def run_pipeline(params):
             epsilon,
             centered,
             epochs,
+            headless,
             models_root_dir,
             history_root_dir)
 
@@ -593,6 +633,8 @@ def run_pipeline(params):
         true_df,
         idx_to_label_map,
         labels,
+        headless,
+        plot_random_images,
         cm_dict_root_dir)
 
 
@@ -612,12 +654,13 @@ def main(argv):
 
     usage="""
 usage:
-    python cnn_image_classification.py ( help | run | test | img-plots-only | latest-model | <model_dir_path> )
+    python cnn_image_classification.py ( help | run | run-headless | test | img-plots-only | latest-model | <model_dir_path> )
     """
 
     # defaults to be overridden by command line argvs
     model=None
     model_dir_path = None
+    headless = False
 
     # process the command line argv
     argv1 = argv[1] if len(argv) > 1 else 'help'
@@ -625,7 +668,9 @@ usage:
         print(usage)
         return 
     elif argv1 == 'run':
-        pass
+        headless = False
+    elif argv1 == 'run-headless':
+        headless = True
     elif argv1 == 'test':
         tests()
         return
@@ -661,14 +706,15 @@ usage:
         "cm_dict_root_dir": CM_DICT_ROOT_DIR,
         "plot_random_images": False,
         "image_plots_only": False,
+        "headless": headless,
 
         # hyperparameters
-        "epochs": 2,
+        "epochs": 15,
         "frame_subsample_rate": 12,
         "image_scale_factor": 0.5,
         "batch_size": 32,
         "kernel_size": 3,
-        "learning_rate": 0.0001,
+        "learning_rate": 1e-5,
         "rho": 0.9,
         "momentum": 0.0,
         "epsilon": 1e-07,

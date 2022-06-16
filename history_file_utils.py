@@ -101,7 +101,7 @@ def tests():
 def main(argv):
     usage = """
 Usage:
-  python history_file_utils.py (help | tests | latest | <history_path)
+  python history_file_utils.py (help | tests | latest | <history_path> | save <history_path> )
 """
     # defaults
     history_path = None
@@ -115,6 +115,21 @@ Usage:
         return
     elif argv1 == 'latest':
         history_path = find_latest_history_path(HISTORY_ROOT_DIR)
+
+    elif argv1 == 'save':
+        if len(argv) <= 2:
+            print("missing required history_path")
+            return
+        history_path = argv[2]
+        history = load_history(history_path)
+        if history is None:
+            print("failed to load history_path:", history_path)
+            return
+        else:
+            save_figure_path = history_path.replace("npy","png")
+            plot_history(history, save_figure_path=save_figure_path)
+            return 
+
     else:
         history_path = argv1
     
@@ -132,4 +147,3 @@ if __name__ == '__main__':
         main(sys.argv)
     else:
         test_save_load()
-    print("done history")

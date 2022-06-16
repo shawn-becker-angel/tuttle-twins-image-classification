@@ -56,7 +56,8 @@ def generate_random_plot_idx(generator):
 def plot_idxed_image_files_with_labels(name, image_files, labels, plot_idx):
     assert len(image_files) == len(labels) == len(plot_idx), "ERROR: length failures"
     N = min(len(image_files),12) # number of images
-    fig = plt.figure(figsize=(12,8))
+    fig_title = name
+    fig = plt.figure(figsize=(12,8), num=fig_title)
     for n in range(N):
         i = plot_idx[n]
         plt.subplot(3,4,n+1)
@@ -77,8 +78,8 @@ def plot_idxed_generator_images(name, generator, plot_idx, idx_to_label_map=None
     else:
         X = generator.next()
         y = None
-
-    fig = plt.figure(figsize=(12,8))
+    fig_title = name
+    fig = plt.figure(figsize=(12,8),num=fig_title)
     
     # trim plot_idx to not exceed the new N
     N = min(len(X),12) # number of images
@@ -117,48 +118,74 @@ def plot_histogram(title: str='Title', data: List[float]=[], with_normal: bool=T
     plt.show()
     wait_for_click()
 
-def plot_history(history, timeout=-1):
+def plot_history(history, timeout=-1, default_save_figure_dir=HISTORY_ROOT_DIR, save_figure_path=None):
     # see https://machinelearningmastery.com/display-deep-learning-model-training-history-in-keras/
     
     history_dict = type_utils.get_history_dict(history)
 
     # list all metrics in history_dict
-
-    print(history_dict.keys())
+    if not save_figure_path:
+        print(history_dict.keys())
     
     num_epochs = len(history_dict['Accuracy'])
     if num_epochs < 2:
         print("skipping plot_history() since num_epochs is less than 2")
         return
     
+    fig_title = "my-history"
+    fig = plt.figure(figsize=(12,6), num=fig_title)
+
     # plot accuracy metrics per epoch (each metric must be in history_dict.keys)
+    plt.subplot(1,2,1)
     plt.plot(history_dict['Accuracy'])
     plt.plot(history_dict['val_Accuracy'])
     plt.title('model accuracy')
     plt.ylabel('accuracy')
     plt.xlabel('epoch')
     plt.legend(['train', 'valid'], loc='upper left')
-    plt.show()
-    print("Showing accuracy metrics per epoch")
-    wait_for_click(timeout)
+    if not save_figure_path:
+        print("Showing accuracy metrics per epoch")
     
     # plot loss metrics per epoch (each metric must be in history_dict.keys)
+    plt.subplot(1,2,2)
     plt.plot(history_dict['loss'])
     plt.plot(history_dict['val_loss'])
     plt.title('model loss')
     plt.ylabel('loss')
     plt.xlabel('epoch')
     plt.legend(['train', 'valid'], loc='upper left')
-    plt.show()
-    print("Showing loss metrics per epoch")
-    wait_for_click(timeout)
+    if not save_figure_path:
+        print("Showing loss metrics per epoch")
 
-def plot_cm_dict(cm_dict, timeout=-1):
+    if save_figure_path is not None:
+        plt.savefig(save_figure_path)
+        print("Saved ", save_figure_path)
+        # return without showing
+        return save_figure_path
+
+    if default_save_figure_dir is not None:
+        import matplotlib as mpl
+        mpl.rcParams["savefig.directory"] = default_save_figure_dir
+
+    plt.show()
+
+def plot_cm_dict(cm_dict, timeout=-1, default_save_figure_dir=CM_DICT_ROOT_DIR, save_figure_path=None):
     assert type_utils.is_cm_dict(cm_dict)
     cm = cm_dict['cm']
     labels = cm_dict['labels']
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
     disp.plot(cmap=plt.cm.Blues)
+
+    if save_figure_path is not None:
+        plt.savefig(save_figure_path)
+        print("Saved confusion matrix of true vs pred labels to ", save_figure_path)
+        # return without showing
+        return save_figure_path
+
+    if default_save_figure_dir is not None:
+        import matplotlib as mpl
+        mpl.rcParams["savefig.directory"] = default_save_figure_dir
+
     print("Showing confusion matrix of true vs pred labels")
     wait_for_click(timeout)
 
@@ -215,4 +242,3 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv)
-    print("done plot")
